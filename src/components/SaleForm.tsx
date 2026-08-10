@@ -1,6 +1,7 @@
-import { sellDisk } from '../storage/hddStore'
+import { findBySerial, sellManyDisks } from '../storage/hddStore'
 import { fromDayMonthYear, nowFromPc, toDayMonthYear } from '../utils/date'
-import { useState, type FormEvent } from 'react'
+import { SerialRows } from './SerialRows'
+import { useMemo, useState, type FormEvent } from 'react'
 
 interface Props {
   onChanged: () => void
@@ -8,11 +9,36 @@ interface Props {
 }
 
 export function SaleForm({ onChanged, initialSerial = '' }: Props) {
-  const [serialNumber, setSerialNumber] = useState(initialSerial)
+  const [serials, setSerials] = useState<string[]>(
+    initialSerial ? [initialSerial, ''] : [''],
+  )
   const [satilanKisi, setSatilanKisi] = useState('')
   const [tarih, setTarih] = useState(() => toDayMonthYear())
   const [notlar, setNotlar] = useState('')
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  const preview = useMemo(() => {
+    return serials.map((raw) => {
+      const sn = raw.trim().toUpperCase()
+      if (!sn) return null
+      const disk = findBySerial(sn)
+      if (!disk) return { kind: 'missing' as const, sn }
+      if (disk.durum === 'satildi') {
+        return {
+          kind: 'sold' as const,
+          sn,
+          text: `Zaten satılmış → ${disk.satilanKisi || '—'}`,
+        }
+      }
+      return {
+        kind: 'ok' as const,
+        sn,
+        text: `${disk.depolama} · ${disk.boyut} · Stokta`,
+      }
+    })
+  }, [serials])
+
+  const readyCount = preview.filter((p) => p?.kind === 'ok').length
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -22,38 +48,45 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
       return
     }
 
-    const result = sellDisk({ serialNumber, satilanKisi, satisTarihi, notlar })
+    const result = sellManyDisks({
+      serialNumbers: serials,
+      satilanKisi,
+      satisTarihi,
+      notlar,
+    })
+
     if (!result.ok) {
       setMessage({ type: 'err', text: result.error })
       return
     }
 
+    const parts = [
+      `${result.sold.length} satış kaydedildi → ${satilanKisi.trim()}.`,
+    ]
+    if (result.failed.length > 0) {
+      parts.push(
+        `Atlanan ${result.failed.length}: ${result.failed
+          .slice(0, 5)
+          .map((s) => `${s.serialNumber} (${s.error})`)
+          .join(', ')}${result.failed.length > 5 ? '…' : ''}`,
+      )
+    }
+
     setMessage({
-      type: 'ok',
-      text: `${result.disk.serialNumber} → ${result.disk.satilanKisi} satış kaydedildi.`,
+      type: result.sold.length > 0 ? 'ok' : 'err',
+      text: parts.join(' '),
     })
-    setSerialNumber('')
-    setSatilanKisi('')
-    setNotlar('')
-    setTarih(toDayMonthYear())
-    onChanged()
+
+    if (result.sold.length > 0) {
+      setSerials([''])
+      setNotlar('')
+      setTarih(toDayMonthYear())
+      onChanged()
+    }
   }
 
   return (
     <form className="panel-form" onSubmit={handleSubmit}>
-      <div className="field">
-        <label htmlFor="satis-sn">S/N</label>
-        <input
-          id="satis-sn"
-          className="mono"
-          value={serialNumber}
-          onChange={(e) => setSerialNumber(e.target.value)}
-          placeholder="Satılacak diskin S/N"
-          autoComplete="off"
-          required
-        />
-      </div>
-
       <div className="field">
         <label htmlFor="satis-kisi">Kime verildi</label>
         <input
@@ -64,6 +97,30 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
           required
         />
       </div>
+
+      <p className="bulk-chip">
+        Sadece S/N yaz — boyut ve depolama stoktan otomatik bulunur
+      </p>
+
+      <SerialRows
+        values={serials}
+        onChange={setSerials}
+        idPrefix="satis-sn"
+        placeholder="Satılacak S/N…"
+        renderHint={(_value, index) => {
+          const info = preview[index]
+          if (!info) return null
+          const cls =
+            info.kind === 'ok'
+              ? 'sn-hint ok'
+              : info.kind === 'sold'
+                ? 'sn-hint warn'
+                : 'sn-hint err'
+          const text =
+            info.kind === 'missing' ? 'Stokta bulunamadı' : info.text
+          return <span className={cls}>{text}</span>
+        }}
+      />
 
       <div className="field">
         <label htmlFor="satis-tarih">Satış tarihi (Gün/Ay/Yıl)</label>
@@ -86,7 +143,6 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
             Bugün
           </button>
         </div>
-        <span className="hint">Format: GG/AA/YYYY — örn. 10/08/2026</span>
       </div>
 
       <div className="field">
@@ -99,8 +155,8 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
         />
       </div>
 
-      <button type="submit" className="btn accent">
-        Satışı Kaydet
+      <button type="submit" className="btn accent" disabled={readyCount === 0}>
+        {readyCount > 1 ? `${readyCount} Satışı Kaydet` : 'Satışı Kaydet'}
       </button>
 
       {message && (

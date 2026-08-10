@@ -96,20 +96,20 @@ export default function App() {
         )}
 
         {tab === 'stok' && (
-          <section className="section">
+          <section className="section wide">
             <h2>Stoğa Ekle</h2>
             <p className="section-desc">
-              Yeni disk kaydı: S/N, boyut (2.5&quot; / 3.5&quot;) ve depolama.
+              Boyut ve depolamayı bir kez seç; istediğin kadar S/N ekle (toplu işlem).
             </p>
             <StockForm onChanged={refresh} />
           </section>
         )}
 
         {tab === 'satis' && (
-          <section className="section">
+          <section className="section wide">
             <h2>Satış Kaydı</h2>
             <p className="section-desc">
-              Diski kime verdiğini kaydet. Kimden alındığı tutulmaz.
+              Alıcıyı bir kez yaz, S/N’leri gir — özellikler stoktan otomatik gelir.
             </p>
             <SaleForm
               key={saleSerial || 'empty'}

@@ -253,6 +253,115 @@ select {
   gap: 0.9rem;
 }
 
+.bulk-chip {
+  margin: 0;
+  padding: 0.65rem 0.85rem;
+  background: rgba(15, 118, 110, 0.08);
+  border: 1px solid rgba(15, 118, 110, 0.18);
+  border-radius: 10px;
+  color: var(--teal-dark);
+  font-size: 0.92rem;
+}
+
+.serial-rows-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.serial-rows-head label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.serial-count {
+  font-family: 'Archivo', sans-serif;
+  font-weight: 700;
+  color: var(--teal);
+  font-size: 0.95rem;
+}
+
+.serial-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.serial-row {
+  display: grid;
+  grid-template-columns: 2rem 1fr 2rem;
+  gap: 0.4rem;
+  align-items: start;
+}
+
+.serial-index {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.7rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.serial-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.serial-remove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  min-height: 2.7rem;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.serial-remove:hover {
+  color: var(--err);
+  background: rgba(185, 28, 28, 0.08);
+}
+
+.serial-remove.spacer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sn-hint {
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding-left: 0.15rem;
+}
+
+.sn-hint.ok {
+  color: var(--ok);
+}
+
+.sn-hint.warn {
+  color: var(--sold);
+}
+
+.sn-hint.err {
+  color: var(--err);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .field {
   display: flex;
   flex-direction: column;
