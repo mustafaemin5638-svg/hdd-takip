@@ -27,23 +27,18 @@ npm run dist
 
 Çıktı: `C:\hdd-takip-release\HDD-TAKIP-Setup-1.0.0.exe`
 
-## GitHub otomatik güncelleme (bir kez ayarla)
+## GitHub otomatik güncelleme
 
-1. GitHub'da boş bir repo aç (ör. `hdd-takip`, public önerilir).
-2. [`electron-builder.yml`](electron-builder.yml) içinde `publish.owner: CHANGE_ME` satırını kendi GitHub kullanıcı adınla değiştir.
-3. GitHub Personal Access Token oluştur (`repo` yetkisi) ve PowerShell'de:
+Repo: https://github.com/mustafaemin5638-svg/hdd-takip  
+İlk sürüm: https://github.com/mustafaemin5638-svg/hdd-takip/releases/tag/v1.0.0
+
+Yeni özellik onaylanınca yayınlamak için (GitHub CLI girişliyken):
 
 ```powershell
-$env:GH_TOKEN = "BURAYA_TOKEN"
-```
-
-4. İlk yayın / sonraki sürümler (onayladığında):
-
-```bash
 npm run release
 ```
 
-Bu komut sürümü otomatik yükseltir (1.0.0 → 1.0.1), `.exe` üretir ve GitHub Release'e yükler. Diğer PC'lerdeki uygulama bunu görür.
+Bu komut sürümü yükseltir (1.0.0 → 1.0.1), `.exe` üretir ve GitHub Release'e yükler. Diğer PC'lerdeki uygulama **Yeni sürüm mevcut** der.
 
 İsteğe bağlı sürüm tipi:
 
