@@ -1,0 +1,31 @@
+appId: com.ozaydin.hddtakip
+productName: HDD TAKIP
+copyright: Copyright © Ozaydin
+directories:
+  # Windows'ta Türkçe karakterli proje yolu sorun çıkarmasın diye ASCII çıktı klasörü
+  output: C:/hdd-takip-release
+  buildResources: build
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+asar: true
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: HDD-TAKIP-Setup-${version}.${ext}
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  shortcutName: HDD TAKIP
+  uninstallDisplayName: HDD TAKIP
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+publish:
+  provider: github
+  owner: mustafaemin5638-svg
+  repo: hdd-takip
+  releaseType: release
