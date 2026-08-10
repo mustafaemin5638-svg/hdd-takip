@@ -1,7 +1,7 @@
 {
   "name": "hdd-takip",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "HDD TAKİP — disk S/N stok ve satış takip uygulaması",
   "author": "Ozaydin",
   "main": "electron/main.cjs",
@@ -11,7 +11,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "electron:dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "electron:dev": "concurrently \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "dist": "npm run build && electron-builder --win",
     "release": "node scripts/release.mjs"
   },
