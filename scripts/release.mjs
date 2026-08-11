@@ -64,4 +64,20 @@ function run(cmd, args) {
 
 run('npm', ['run', 'build'])
 run('npx', ['electron-builder', '--win', '--publish', 'always'])
+
+// Yayın sonrası latest.yml doğrula (yanlış sürüm = eski istemciler güncelleme görmez)
+try {
+  const latestPath = 'C:/hdd-takip-release/latest.yml'
+  const latest = readFileSync(latestPath, 'utf8')
+  if (!latest.includes(`version: ${next}`)) {
+    console.error(
+      `Uyarı: ${latestPath} sürümü ${next} değil. electron-updater bozulabilir — dosyayı kontrol et.`,
+    )
+    process.exit(1)
+  }
+  console.log(`latest.yml doğrulandı: v${next}`)
+} catch (err) {
+  console.error('Uyarı: latest.yml okunamadı:', err?.message || err)
+}
+
 console.log(`Yayın tamam: v${next}`)

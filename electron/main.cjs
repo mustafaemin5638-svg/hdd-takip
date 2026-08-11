@@ -40,12 +40,14 @@ function checkInstallGuard() {
 }
 
 function createWindow() {
+  const iconPath = path.join(__dirname, '../build/icon.ico')
   mainWindow = new BrowserWindow({
     width: isOwnerMode ? 1280 : 1180,
     height: isOwnerMode ? 860 : 800,
     minWidth: isOwnerMode ? 980 : 900,
     minHeight: 640,
     title: isOwnerMode ? 'HDD TAKİP Yönetici Paneli' : 'HDD TAKİP',
+    icon: iconPath,
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -138,7 +140,8 @@ function setupAutoUpdater() {
   })
 
   ipcMain.handle('updater:install', () => {
-    autoUpdater.quitAndInstall(false, true)
+    // Sessiz kurulum: NSIS "Yükleniyor" penceresini gösterme
+    autoUpdater.quitAndInstall(true, true)
     return true
   })
 
