@@ -11,7 +11,7 @@ files:
   - package.json
 asar: true
 win:
-  icon: build/icon.ico
+  icon: build/icon.png
   target:
     - target: nsis
       arch:
@@ -29,7 +29,6 @@ nsis:
   installerIcon: build/icon.ico
   uninstallerIcon: build/icon.ico
   installerHeaderIcon: build/icon.ico
-  # Güncellemede sessiz kurulum desteklensin
   differentialPackage: true
 publish:
   provider: github
