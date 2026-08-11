@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.1",
   "description": "HDD TAKİP — disk S/N stok ve satış takip uygulaması",
-  "author": "Ozaydin",
+  "author": "NEXTSOFTWARE",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "electron:owner": "node scripts/start-owner.mjs",
     "dist": "npm run build && electron-builder --win",
     "release": "node scripts/release.mjs"
   },

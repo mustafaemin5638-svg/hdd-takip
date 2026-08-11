@@ -21,7 +21,7 @@ export function QueryPanel() {
 
   return (
     <div className="query-wrap">
-      <form className="panel-form query-form" onSubmit={handleSubmit}>
+      <form className="panel-form" onSubmit={handleSubmit}>
         <div className="field">
           <label htmlFor="sorgu-sn">S/N Sorgula</label>
           <div className="inline-actions">
@@ -49,7 +49,7 @@ export function QueryPanel() {
       )}
 
       {result && (
-        <div className="result card-result">
+        <div className="result">
           <div className="result-head">
             <h3 className="mono">{result.serialNumber}</h3>
             <span className={`badge ${result.durum}`}>

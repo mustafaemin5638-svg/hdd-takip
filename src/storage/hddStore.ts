@@ -1,6 +1,15 @@
 import type { Hdd } from '../types/hdd'
 
-const STORAGE_KEY = 'hdd-takip-verileri'
+const LEGACY_KEY = 'hdd-takip-verileri'
+let tenantKey = 'default'
+
+export function setTenantKey(key: string) {
+  tenantKey = key || 'default'
+}
+
+function storageKey() {
+  return `${LEGACY_KEY}:${tenantKey}`
+}
 
 function normalizeSerial(sn: string): string {
   return sn.trim().toUpperCase()
@@ -8,8 +17,18 @@ function normalizeSerial(sn: string): string {
 
 export function loadDiskler(): Hdd[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
+    const raw = localStorage.getItem(storageKey())
+    if (!raw) {
+      // Eski tek-havuz veriyi yalnızca default tenant'ta bir kez göster
+      if (tenantKey === 'default') {
+        const legacy = localStorage.getItem(LEGACY_KEY)
+        if (legacy) {
+          const parsed = JSON.parse(legacy) as Hdd[]
+          return Array.isArray(parsed) ? parsed : []
+        }
+      }
+      return []
+    }
     const parsed = JSON.parse(raw) as Hdd[]
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -18,100 +37,12 @@ export function loadDiskler(): Hdd[] {
 }
 
 export function saveDiskler(diskler: Hdd[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(diskler))
+  localStorage.setItem(storageKey(), JSON.stringify(diskler))
 }
 
 export function findBySerial(serialNumber: string): Hdd | undefined {
   const sn = normalizeSerial(serialNumber)
   return loadDiskler().find((d) => d.serialNumber === sn)
-}
-
-export function addToStock(input: {
-  serialNumber: string
-  boyut: Hdd['boyut']
-  depolama: string
-  stokGirisTarihi?: string
-  notlar?: string
-}): { ok: true; disk: Hdd } | { ok: false; error: string } {
-  const serialNumber = normalizeSerial(input.serialNumber)
-  if (!serialNumber) {
-    return { ok: false, error: 'S/N zorunludur.' }
-  }
-  if (!input.depolama.trim()) {
-    return { ok: false, error: 'Depolama zorunludur.' }
-  }
-
-  const stokGirisTarihi = input.stokGirisTarihi || new Date().toISOString()
-  if (Number.isNaN(new Date(stokGirisTarihi).getTime())) {
-    return { ok: false, error: 'Geçersiz stok giriş tarihi.' }
-  }
-
-  const diskler = loadDiskler()
-  if (diskler.some((d) => d.serialNumber === serialNumber)) {
-    return { ok: false, error: 'Bu S/N zaten sistemde kayıtlı.' }
-  }
-
-  const disk: Hdd = {
-    id: crypto.randomUUID(),
-    serialNumber,
-    boyut: input.boyut,
-    depolama: input.depolama.trim(),
-    stokGirisTarihi,
-    durum: 'stokta',
-    notlar: input.notlar?.trim() || undefined,
-  }
-
-  diskler.unshift(disk)
-  saveDiskler(diskler)
-  return { ok: true, disk }
-}
-
-export function sellDisk(input: {
-  serialNumber: string
-  satilanKisi: string
-  satisTarihi?: string
-  notlar?: string
-}): { ok: true; disk: Hdd } | { ok: false; error: string } {
-  const serialNumber = normalizeSerial(input.serialNumber)
-  const satilanKisi = input.satilanKisi.trim()
-
-  if (!serialNumber) {
-    return { ok: false, error: 'S/N zorunludur.' }
-  }
-  if (!satilanKisi) {
-    return { ok: false, error: 'Alıcı (kime verildi) zorunludur.' }
-  }
-
-  const satisTarihi = input.satisTarihi || new Date().toISOString()
-  if (Number.isNaN(new Date(satisTarihi).getTime())) {
-    return { ok: false, error: 'Geçersiz satış tarihi.' }
-  }
-
-  const diskler = loadDiskler()
-  const index = diskler.findIndex((d) => d.serialNumber === serialNumber)
-  if (index === -1) {
-    return { ok: false, error: 'Bu S/N stokta bulunamadı.' }
-  }
-
-  const disk = diskler[index]
-  if (disk.durum === 'satildi') {
-    return {
-      ok: false,
-      error: `Bu disk zaten satılmış. Alıcı: ${disk.satilanKisi}`,
-    }
-  }
-
-  const updated: Hdd = {
-    ...disk,
-    durum: 'satildi',
-    satilanKisi,
-    satisTarihi,
-    notlar: input.notlar?.trim() || disk.notlar,
-  }
-
-  diskler[index] = updated
-  saveDiskler(diskler)
-  return { ok: true, disk: updated }
 }
 
 export function addManyToStock(input: {
@@ -239,6 +170,22 @@ export function getStockCounts(diskler: Hdd[]) {
     stokta: diskler.filter((d) => d.durum === 'stokta').length,
     satildi: diskler.filter((d) => d.durum === 'satildi').length,
   }
+}
+
+/** Stokta olan diskleri depolama + boyut grubuna göre say */
+export function getInStockSummary(diskler: Hdd[]) {
+  const map = new Map<string, { depolama: string; boyut: Hdd['boyut']; adet: number }>()
+  for (const d of diskler) {
+    if (d.durum !== 'stokta') continue
+    const key = `${d.depolama}||${d.boyut}`
+    const prev = map.get(key)
+    if (prev) prev.adet += 1
+    else map.set(key, { depolama: d.depolama, boyut: d.boyut, adet: 1 })
+  }
+  return [...map.values()].sort((a, b) => {
+    if (a.boyut !== b.boyut) return a.boyut.localeCompare(b.boyut)
+    return a.depolama.localeCompare(b.depolama)
+  })
 }
 
 export function parseSerialList(raw: string): string[] {
