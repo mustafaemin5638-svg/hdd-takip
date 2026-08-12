@@ -1,11 +1,42 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+const fs = require('fs')
+const crypto = require('crypto')
 const { autoUpdater } = require('electron-updater')
 const auth = require('./authStore.cjs')
 
 const isDev = !app.isPackaged
-const isOwnerMode =
+const wantsOwnerMode =
   process.argv.includes('--owner') || process.env.HDD_OWNER_PANEL === '1'
+
+/** Tek seferlik aktivasyon kodu özeti — müşteri kurulumlarında panel açılmaz */
+const OWNER_UNLOCK_HASH =
+  'a9fd7c0509a45f948e783074c7ab9c3e85028d6df9d9d87b1b4df70ca006336e'
+
+function ownerUnlockPath() {
+  return path.join(app.getPath('userData'), 'owner-panel.enabled')
+}
+
+function isOwnerPanelAllowed() {
+  if (isDev) return true
+  if (process.env.HDD_OWNER_PANEL === '1') return true
+  try {
+    return fs.existsSync(ownerUnlockPath())
+  } catch {
+    return false
+  }
+}
+
+function writeOwnerUnlock() {
+  fs.writeFileSync(
+    ownerUnlockPath(),
+    JSON.stringify({ enabledAt: new Date().toISOString() }, null, 2),
+    'utf8',
+  )
+}
+
+/** Pencere / hash için: --owner isteği var mı (kilit ekranı dahil) */
+const isOwnerMode = wantsOwnerMode
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null
@@ -14,6 +45,11 @@ function sendToRenderer(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload)
   }
+}
+
+function denyUnlessOwner() {
+  if (isOwnerPanelAllowed()) return null
+  return { ok: false, error: 'Yönetici paneli bu kurulumda etkin değil.' }
 }
 
 /** Setup ile kurulum kontrolü — taşınabilir kopyayı engellemeye çalışır */
@@ -183,8 +219,9 @@ function setupAuthIpc() {
     return true
   })
   ipcMain.handle('app:createOwnerDesktopShortcut', async () => {
+    const denied = denyUnlessOwner()
+    if (denied) return denied
     try {
-      const fs = require('fs')
       const os = require('os')
       const { execFileSync } = require('child_process')
       const projectRoot = path.join(__dirname, '..')
@@ -193,6 +230,7 @@ function setupAuthIpc() {
       // OneDrive kullanma — sadece klasik Masaüstü
       const desktop = path.join(home, 'Desktop')
       fs.mkdirSync(desktop, { recursive: true })
+      writeOwnerUnlock()
 
       if (isDev) {
         // Türkçe klasör yolu .lnk içinde bozuluyor → 8.3 kısa yol kullan
@@ -270,28 +308,92 @@ Write-Output $shortcutPath
     }
   })
 
+  ipcMain.handle('app:getOwnerAccess', () => ({
+    allowed: isOwnerPanelAllowed(),
+    wantsOwner: wantsOwnerMode,
+  }))
+
+  ipcMain.handle('app:enableOwnerPanel', (_e, code) => {
+    const raw = String(code || '').trim()
+    if (!raw) return { ok: false, error: 'Aktivasyon kodu gerekli.' }
+    const hash = crypto.createHash('sha256').update(raw).digest('hex')
+    if (hash !== OWNER_UNLOCK_HASH) {
+      return { ok: false, error: 'Aktivasyon kodu hatalı.' }
+    }
+    try {
+      writeOwnerUnlock()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) }
+    }
+  })
+
+  const ownerOnly = (handler) => (_e, ...args) => {
+    const denied = denyUnlessOwner()
+    if (denied) return denied
+    return handler(...args)
+  }
+
   ipcMain.handle('auth:getSession', () => auth.getSession())
   ipcMain.handle('auth:logout', () => auth.logout())
   ipcMain.handle('auth:getRemembered', () => auth.getRemembered())
   ipcMain.handle('auth:getMachineBinding', () => auth.getMachineBinding())
-  ipcMain.handle('auth:hasMasterPassword', () => auth.hasMasterPassword())
-  ipcMain.handle('auth:setMasterPassword', (_e, password) => auth.setMasterPassword(password))
-  ipcMain.handle('auth:listCredentials', (_e, masterPassword) =>
-    auth.listDirectory(masterPassword),
+  ipcMain.handle(
+    'auth:hasMasterPassword',
+    ownerOnly(() => auth.hasMasterPassword()),
   )
-  ipcMain.handle('auth:grantLicense', (_e, payload) => auth.grantOrExtendLicense(payload))
-  ipcMain.handle('auth:setLicenseStatus', (_e, payload) => auth.setLicenseStatus(payload))
-  ipcMain.handle('auth:setRemoteLicenseUrl', (_e, payload) => auth.setRemoteLicenseUrl(payload))
-  ipcMain.handle('auth:getRemoteLicenseUrl', (_e, masterPassword) =>
-    auth.getRemoteLicenseUrl(masterPassword),
+  ipcMain.handle(
+    'auth:setMasterPassword',
+    ownerOnly((password) => auth.setMasterPassword(password)),
   )
-  ipcMain.handle('auth:updateIndividual', (_e, payload) => auth.updateIndividual(payload))
-  ipcMain.handle('auth:updateCompany', (_e, payload) => auth.updateCompany(payload))
-  ipcMain.handle('auth:updateStaffMember', (_e, payload) => auth.updateStaffMember(payload))
-  ipcMain.handle('auth:deleteIndividual', (_e, payload) => auth.deleteIndividual(payload))
-  ipcMain.handle('auth:deleteCompany', (_e, payload) => auth.deleteCompany(payload))
-  ipcMain.handle('auth:deleteStaffMember', (_e, payload) => auth.deleteStaffMember(payload))
-  ipcMain.handle('auth:setAccountStatus', (_e, payload) => auth.setAccountStatus(payload))
+  ipcMain.handle(
+    'auth:listCredentials',
+    ownerOnly((masterPassword) => auth.listDirectory(masterPassword)),
+  )
+  ipcMain.handle(
+    'auth:grantLicense',
+    ownerOnly((payload) => auth.grantOrExtendLicense(payload)),
+  )
+  ipcMain.handle(
+    'auth:setLicenseStatus',
+    ownerOnly((payload) => auth.setLicenseStatus(payload)),
+  )
+  ipcMain.handle(
+    'auth:setRemoteLicenseUrl',
+    ownerOnly((payload) => auth.setRemoteLicenseUrl(payload)),
+  )
+  ipcMain.handle(
+    'auth:getRemoteLicenseUrl',
+    ownerOnly((masterPassword) => auth.getRemoteLicenseUrl(masterPassword)),
+  )
+  ipcMain.handle(
+    'auth:updateIndividual',
+    ownerOnly((payload) => auth.updateIndividual(payload)),
+  )
+  ipcMain.handle(
+    'auth:updateCompany',
+    ownerOnly((payload) => auth.updateCompany(payload)),
+  )
+  ipcMain.handle(
+    'auth:updateStaffMember',
+    ownerOnly((payload) => auth.updateStaffMember(payload)),
+  )
+  ipcMain.handle(
+    'auth:deleteIndividual',
+    ownerOnly((payload) => auth.deleteIndividual(payload)),
+  )
+  ipcMain.handle(
+    'auth:deleteCompany',
+    ownerOnly((payload) => auth.deleteCompany(payload)),
+  )
+  ipcMain.handle(
+    'auth:deleteStaffMember',
+    ownerOnly((payload) => auth.deleteStaffMember(payload)),
+  )
+  ipcMain.handle(
+    'auth:setAccountStatus',
+    ownerOnly((payload) => auth.setAccountStatus(payload)),
+  )
   ipcMain.handle('auth:registerIndividual', (_e, payload) => auth.registerIndividual(payload))
   ipcMain.handle('auth:loginIndividual', (_e, payload) => auth.loginIndividual(payload))
   ipcMain.handle('auth:registerCompanyAdmin', (_e, payload) => auth.registerCompanyAdmin(payload))

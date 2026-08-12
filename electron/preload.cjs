@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('hddTakip', {
   installGuard: () => ipcRenderer.invoke('app:installGuard'),
   quit: () => ipcRenderer.invoke('app:quit'),
   createOwnerDesktopShortcut: () => ipcRenderer.invoke('app:createOwnerDesktopShortcut'),
+  getOwnerAccess: () => ipcRenderer.invoke('app:getOwnerAccess'),
+  enableOwnerPanel: (code) => ipcRenderer.invoke('app:enableOwnerPanel', code),
   checkForUpdates: () => ipcRenderer.invoke('updater:check'),
   downloadUpdate: () => ipcRenderer.invoke('updater:download'),
   installUpdate: () => ipcRenderer.invoke('updater:install'),
