@@ -85,6 +85,13 @@ function setupAutoUpdater() {
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+  // Hataları yutma — banner'da görünsün
+  autoUpdater.logger = {
+    info: (...args) => console.log('[updater]', ...args),
+    warn: (...args) => console.warn('[updater]', ...args),
+    error: (...args) => console.error('[updater]', ...args),
+    debug: (...args) => console.log('[updater:debug]', ...args),
+  }
 
   autoUpdater.on('checking-for-update', () => {
     sendToRenderer('updater:status', { status: 'checking' })
@@ -130,8 +137,14 @@ function setupAutoUpdater() {
   })
 
   ipcMain.handle('updater:check', async () => {
-    const result = await autoUpdater.checkForUpdates()
-    return result?.updateInfo?.version ?? null
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      return result?.updateInfo?.version ?? null
+    } catch (err) {
+      const raw = err?.message || String(err)
+      sendToRenderer('updater:status', { status: 'error', message: raw })
+      throw err
+    }
   })
 
   ipcMain.handle('updater:download', async () => {
@@ -146,7 +159,12 @@ function setupAutoUpdater() {
   })
 
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
+    autoUpdater.checkForUpdates().catch((err) => {
+      sendToRenderer('updater:status', {
+        status: 'error',
+        message: err?.message || String(err),
+      })
+    })
   }, 2500)
 
   setInterval(

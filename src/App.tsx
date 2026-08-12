@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { AuthGate } from './auth/AuthGate'
 import { CompanyAdminPanel } from './auth/CompanyAdminPanel'
+import { DistributorPanel } from './components/DistributorPanel'
 import { LiveClock } from './components/LiveClock'
 import { QueryPanel } from './components/QueryPanel'
 import { SaleForm } from './components/SaleForm'
@@ -12,7 +13,7 @@ import { getStockCounts, loadDiskler } from './storage/hddStore'
 import type { AuthSession } from './types/auth'
 import type { Hdd } from './types/hdd'
 
-type Tab = 'sorgu' | 'stok' | 'satis' | 'liste' | 'firma' | 'hesap'
+type Tab = 'sorgu' | 'stok' | 'satis' | 'liste' | 'tedarikci' | 'firma' | 'hesap'
 
 function MainApp({
   session,
@@ -28,6 +29,7 @@ function MainApp({
   const [curPw, setCurPw] = useState('')
   const [newPw, setNewPw] = useState('')
   const [pwMsg, setPwMsg] = useState('')
+  const [updateMsg, setUpdateMsg] = useState('')
 
   const refresh = useCallback(() => {
     setDiskler(loadDiskler())
@@ -63,11 +65,26 @@ function MainApp({
     }
   }
 
+  async function checkUpdate() {
+    setUpdateMsg('Kontrol ediliyor…')
+    try {
+      const v = await window.hddTakip?.checkForUpdates()
+      if (v && v !== appVersion) {
+        setUpdateMsg(`Yeni sürüm: v${v}. Üstteki bannerdan indir.`)
+      } else {
+        setUpdateMsg(`Güncelsin (v${appVersion || v || '—'}).`)
+      }
+    } catch (err) {
+      setUpdateMsg(err instanceof Error ? err.message : 'Kontrol başarısız.')
+    }
+  }
+
   const navItems: [Tab, string][] = [
     ['liste', 'Liste'],
     ['stok', 'Stoğa Ekle'],
     ['satis', 'Satış'],
     ['sorgu', 'Sorgulama'],
+    ['tedarikci', 'Tedarikçi'],
   ]
   if (isCompanyAdmin) navItems.push(['firma', 'Firma / Personel'])
   navItems.push(['hesap', 'Hesap'])
@@ -137,7 +154,8 @@ function MainApp({
             <section className="section wide">
               <h2>Stoğa Ekle</h2>
               <p className="section-desc">
-                Boyut ve depolamayı bir kez seç; istediğin kadar S/N ekle (toplu işlem).
+                Tür (Sıfır / 2. El) ve ortak özellikleri seç; S/N’leri toplu ekle. Sıfır
+                diskte distribütör zorunlu. Garanti satışta seçilir.
               </p>
               <StockForm onChanged={refresh} />
             </section>
@@ -147,7 +165,8 @@ function MainApp({
             <section className="section wide">
               <h2>Satış Kaydı</h2>
               <p className="section-desc">
-                Alıcıyı bir kez yaz, S/N’leri gir — özellikler stoktan otomatik gelir.
+                Alıcıyı ve garanti süresini (veya Garanti yok) bir kez seç; S/N’leri gir —
+                özellikler stoktan otomatik gelir.
               </p>
               <SaleForm
                 key={saleSerial || 'empty'}
@@ -163,8 +182,16 @@ function MainApp({
           {tab === 'liste' && (
             <section className="section wide">
               <h2>Disk Listesi</h2>
-              <p className="section-desc">Stoktaki ve satılan disklerin özeti.</p>
+              <p className="section-desc">
+                Diskler Sıfır ve 2. El olarak ayrılır; stok / satış durumuna göre de süzebilirsin.
+              </p>
               <StockList diskler={diskler} onSell={goSell} />
+            </section>
+          )}
+
+          {tab === 'tedarikci' && (
+            <section className="section">
+              <DistributorPanel />
             </section>
           )}
 
@@ -207,6 +234,13 @@ function MainApp({
                 </button>
               </form>
               {pwMsg && <p className="msg ok">{pwMsg}</p>}
+
+              <h3>Güncelleme</h3>
+              <p className="section-desc">Sürüm: v{appVersion || '—'}</p>
+              <button type="button" className="btn small" onClick={checkUpdate}>
+                Güncelleme kontrol et
+              </button>
+              {updateMsg && <p className="msg ok">{updateMsg}</p>}
             </section>
           )}
         </main>

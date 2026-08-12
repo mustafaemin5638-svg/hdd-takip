@@ -1,3 +1,4 @@
+import { GARANTI_AY_SECENEKLERI } from '../types/hdd'
 import { findBySerial, sellManyDisks } from '../storage/hddStore'
 import { fromDayMonthYear, nowFromPc, toDayMonthYear } from '../utils/date'
 import { SerialRows } from './SerialRows'
@@ -13,6 +14,7 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
     initialSerial ? [initialSerial, ''] : [''],
   )
   const [satilanKisi, setSatilanKisi] = useState('')
+  const [garantiAy, setGarantiAy] = useState(12)
   const [tarih, setTarih] = useState(() => toDayMonthYear())
   const [notlar, setNotlar] = useState('')
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
@@ -30,10 +32,11 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
           text: `Zaten satılmış → ${disk.satilanKisi || '—'}`,
         }
       }
+      const tur = disk.tur === 'sifir' ? 'Sıfır' : '2. El'
       return {
         kind: 'ok' as const,
         sn,
-        text: `${disk.depolama} · ${disk.boyut} · Stokta`,
+        text: `${tur} · ${disk.depolama} · ${disk.boyut} · Stokta`,
       }
     })
   }, [serials])
@@ -51,6 +54,7 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
     const result = sellManyDisks({
       serialNumbers: serials,
       satilanKisi,
+      garantiAy,
       satisTarihi,
       notlar,
     })
@@ -60,8 +64,9 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
       return
     }
 
+    const garantiText = garantiAy <= 0 ? 'garanti yok' : `${garantiAy} ay garanti`
     const parts = [
-      `${result.sold.length} satış kaydedildi → ${satilanKisi.trim()}.`,
+      `${result.sold.length} satış kaydedildi → ${satilanKisi.trim()} (${garantiText}).`,
     ]
     if (result.failed.length > 0) {
       parts.push(
@@ -98,8 +103,35 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
         />
       </div>
 
+      <div className="field">
+        <label htmlFor="satis-garanti">Garanti süresi</label>
+        <select
+          id="satis-garanti"
+          value={garantiAy}
+          onChange={(e) => setGarantiAy(Number(e.target.value))}
+        >
+          <option value={0}>Garanti yok</option>
+          {GARANTI_AY_SECENEKLERI.map((ay) => (
+            <option key={ay} value={ay}>
+              {ay} ay
+            </option>
+          ))}
+        </select>
+      </div>
+
       <p className="bulk-chip">
-        Sadece S/N yaz — boyut ve depolama stoktan otomatik bulunur
+        Sadece S/N yaz — özellikler stoktan gelir; garanti bu satışa uygulanır
+        {garantiAy <= 0 ? (
+          <>
+            {' '}
+            · <strong>garanti yok</strong>
+          </>
+        ) : (
+          <>
+            {' '}
+            · <strong>{garantiAy} ay</strong>
+          </>
+        )}
       </p>
 
       <SerialRows

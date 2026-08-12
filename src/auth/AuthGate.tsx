@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { AuthSession } from '../types/auth'
 import { LoginFlow } from './LoginFlow'
 import { setTenantKey } from '../storage/hddStore'
+import { setDistributorTenantKey } from '../storage/distributorStore'
 
 interface Props {
   children: (session: AuthSession, logout: () => void) => ReactNode
@@ -38,6 +39,7 @@ export function AuthGate({ children }: Props) {
       const existing = await window.hddTakip.auth.getSession()
       if (existing) {
         setTenantKey(existing.tenantKey)
+        setDistributorTenantKey(existing.tenantKey)
         setSession(existing)
         setPhase('app')
         return
@@ -53,6 +55,7 @@ export function AuthGate({ children }: Props) {
 
   function handleLoggedIn(s: AuthSession) {
     setTenantKey(s.tenantKey)
+    setDistributorTenantKey(s.tenantKey)
     setSession(s)
     setPhase('app')
   }
@@ -61,6 +64,7 @@ export function AuthGate({ children }: Props) {
     await window.hddTakip?.auth.logout()
     setSession(null)
     setTenantKey('default')
+    setDistributorTenantKey('default')
     setPhase('login')
   }
 

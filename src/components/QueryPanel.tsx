@@ -1,7 +1,27 @@
 import type { Hdd } from '../types/hdd'
+import {
+  garantiBitisTarihi,
+  garantiMetin,
+  isGarantiAktif,
+  normalizeTur,
+  turLabel,
+} from '../types/hdd'
 import { findBySerial } from '../storage/hddStore'
 import { formatDate } from '../utils/date'
+import { GarantiIsik } from './GarantiIsik'
 import { useState, type FormEvent } from 'react'
+
+function garantiDetay(disk: Hdd): string {
+  const base = garantiMetin(disk)
+  if (disk.durum !== 'satildi' || !disk.garantiAy || disk.garantiAy <= 0) {
+    return base
+  }
+  if (isGarantiAktif(disk)) {
+    const end = garantiBitisTarihi(disk.satisTarihi, disk.garantiAy)
+    return `${base} · bitiş ${formatDate(end?.toISOString())}`
+  }
+  return `${base} · süresi dolmuş`
+}
 
 export function QueryPanel() {
   const [serialNumber, setSerialNumber] = useState('')
@@ -58,6 +78,23 @@ export function QueryPanel() {
           </div>
 
           <dl className="detail-grid">
+            <div>
+              <dt>Tür</dt>
+              <dd>{turLabel(normalizeTur(result.tur))}</dd>
+            </div>
+            <div>
+              <dt>Garanti</dt>
+              <dd>
+                <span className="garanti-cell">
+                  <GarantiIsik disk={result} />
+                  <span>{garantiDetay(result)}</span>
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Distribütör</dt>
+              <dd>{result.distributor || '—'}</dd>
+            </div>
             <div>
               <dt>Boyut</dt>
               <dd>{result.boyut}</dd>

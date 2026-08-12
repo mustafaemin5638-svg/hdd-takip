@@ -1,4 +1,5 @@
-import type { Hdd } from '../types/hdd'
+import type { Hdd, HddTur } from '../types/hdd'
+import { normalizeTur } from '../types/hdd'
 
 const LEGACY_KEY = 'hdd-takip-verileri'
 let tenantKey = 'default'
@@ -15,6 +16,21 @@ function normalizeSerial(sn: string): string {
   return sn.trim().toUpperCase()
 }
 
+function normalizeDisk(d: Hdd): Hdd {
+  return {
+    ...d,
+    tur: normalizeTur(d.tur),
+    garantiAy:
+      typeof d.garantiAy === 'number' &&
+      Number.isInteger(d.garantiAy) &&
+      d.garantiAy >= 0 &&
+      d.garantiAy <= 24
+        ? d.garantiAy
+        : undefined,
+    distributor: d.distributor?.trim() || undefined,
+  }
+}
+
 export function loadDiskler(): Hdd[] {
   try {
     const raw = localStorage.getItem(storageKey())
@@ -24,13 +40,13 @@ export function loadDiskler(): Hdd[] {
         const legacy = localStorage.getItem(LEGACY_KEY)
         if (legacy) {
           const parsed = JSON.parse(legacy) as Hdd[]
-          return Array.isArray(parsed) ? parsed : []
+          return Array.isArray(parsed) ? parsed.map(normalizeDisk) : []
         }
       }
       return []
     }
     const parsed = JSON.parse(raw) as Hdd[]
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.map(normalizeDisk) : []
   } catch {
     return []
   }
@@ -49,6 +65,8 @@ export function addManyToStock(input: {
   serialNumbers: string[]
   boyut: Hdd['boyut']
   depolama: string
+  tur: HddTur
+  distributor?: string
   stokGirisTarihi?: string
   notlar?: string
 }): {
@@ -66,6 +84,13 @@ export function addManyToStock(input: {
   }
   if (!input.depolama.trim()) {
     return { ok: false, error: 'Depolama zorunludur.' }
+  }
+
+  const tur = normalizeTur(input.tur)
+  const distributor =
+    tur === 'sifir' ? String(input.distributor || '').trim() : ''
+  if (tur === 'sifir' && !distributor) {
+    return { ok: false, error: 'Sıfır disk için distribütör zorunlu.' }
   }
 
   const stokGirisTarihi = input.stokGirisTarihi || new Date().toISOString()
@@ -88,6 +113,8 @@ export function addManyToStock(input: {
       serialNumber,
       boyut: input.boyut,
       depolama: input.depolama.trim(),
+      tur,
+      distributor: distributor || undefined,
       stokGirisTarihi,
       durum: 'stokta',
       notlar: input.notlar?.trim() || undefined,
@@ -104,6 +131,8 @@ export function addManyToStock(input: {
 export function sellManyDisks(input: {
   serialNumbers: string[]
   satilanKisi: string
+  /** 0 = garanti yok, 1–24 = ay */
+  garantiAy: number
   satisTarihi?: string
   notlar?: string
 }): {
@@ -123,6 +152,11 @@ export function sellManyDisks(input: {
   }
   if (!satilanKisi) {
     return { ok: false, error: 'Alıcı (kime verildi) zorunludur.' }
+  }
+
+  const garantiAy = Number(input.garantiAy)
+  if (!Number.isInteger(garantiAy) || garantiAy < 0 || garantiAy > 24) {
+    return { ok: false, error: 'Garanti: Yok veya 1–24 ay seç.' }
   }
 
   const satisTarihi = input.satisTarihi || new Date().toISOString()
@@ -154,6 +188,7 @@ export function sellManyDisks(input: {
       durum: 'satildi',
       satilanKisi,
       satisTarihi,
+      garantiAy,
       notlar: input.notlar?.trim() || disk.notlar,
     }
     diskler[index] = updated
@@ -174,15 +209,20 @@ export function getStockCounts(diskler: Hdd[]) {
 
 /** Stokta olan diskleri depolama + boyut grubuna göre say */
 export function getInStockSummary(diskler: Hdd[]) {
-  const map = new Map<string, { depolama: string; boyut: Hdd['boyut']; adet: number }>()
+  const map = new Map<
+    string,
+    { depolama: string; boyut: Hdd['boyut']; tur: HddTur; adet: number }
+  >()
   for (const d of diskler) {
     if (d.durum !== 'stokta') continue
-    const key = `${d.depolama}||${d.boyut}`
+    const tur = normalizeTur(d.tur)
+    const key = `${d.depolama}||${d.boyut}||${tur}`
     const prev = map.get(key)
     if (prev) prev.adet += 1
-    else map.set(key, { depolama: d.depolama, boyut: d.boyut, adet: 1 })
+    else map.set(key, { depolama: d.depolama, boyut: d.boyut, tur, adet: 1 })
   }
   return [...map.values()].sort((a, b) => {
+    if (a.tur !== b.tur) return a.tur === 'sifir' ? -1 : 1
     if (a.boyut !== b.boyut) return a.boyut.localeCompare(b.boyut)
     return a.depolama.localeCompare(b.depolama)
   })
