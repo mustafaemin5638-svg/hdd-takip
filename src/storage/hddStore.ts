@@ -135,10 +135,13 @@ export function sellManyDisks(input: {
   garantiAy: number
   satisTarihi?: string
   notlar?: string
+  satanKullanici?: string
+  satanDisplayName?: string
 }): {
   ok: true
   sold: Hdd[]
   failed: { serialNumber: string; error: string }[]
+  saleId?: string
 } | { ok: false; error: string } {
   const unique = [
     ...new Set(
@@ -163,6 +166,10 @@ export function sellManyDisks(input: {
   if (Number.isNaN(new Date(satisTarihi).getTime())) {
     return { ok: false, error: 'Geçersiz satış tarihi.' }
   }
+
+  const saleId = crypto.randomUUID()
+  const satanKullanici = input.satanKullanici?.trim() || undefined
+  const satanDisplayName = input.satanDisplayName?.trim() || undefined
 
   const diskler = loadDiskler()
   const sold: Hdd[] = []
@@ -189,6 +196,9 @@ export function sellManyDisks(input: {
       satilanKisi,
       satisTarihi,
       garantiAy,
+      saleId,
+      satanKullanici,
+      satanDisplayName,
       notlar: input.notlar?.trim() || disk.notlar,
     }
     diskler[index] = updated
@@ -196,7 +206,57 @@ export function sellManyDisks(input: {
   }
 
   if (sold.length > 0) saveDiskler(diskler)
-  return { ok: true, sold, failed }
+  return { ok: true, sold, failed, saleId: sold.length > 0 ? saleId : undefined }
+}
+
+/** Aynı satış paketindeki diskler (saleId veya eski kayıtlarda alıcı+gün) */
+export function findSaleBatch(anchor: Hdd, pool?: Hdd[]): Hdd[] {
+  if (anchor.durum !== 'satildi') return [anchor]
+  const all = (pool ?? loadDiskler()).filter((d) => d.durum === 'satildi')
+  const key = salePackageKey(anchor)
+  const batch = all.filter((d) => salePackageKey(d) === key)
+  if (batch.length === 0) return [anchor]
+  return sortSaleBatch(batch)
+}
+
+/** Tüm satılmış diskleri satış paketlerine ayırır (liste için tek satır) */
+export function listSalePackages(diskler: Hdd[]): Hdd[][] {
+  const sold = diskler.filter((d) => d.durum === 'satildi')
+  const map = new Map<string, Hdd[]>()
+  for (const d of sold) {
+    const key = salePackageKey(d)
+    const arr = map.get(key)
+    if (arr) arr.push(d)
+    else map.set(key, [d])
+  }
+  return [...map.values()]
+    .map(sortSaleBatch)
+    .sort((a, b) => {
+      const ta = new Date(a[0]?.satisTarihi || 0).getTime()
+      const tb = new Date(b[0]?.satisTarihi || 0).getTime()
+      return tb - ta
+    })
+}
+
+export function salePackageKey(d: Hdd): string {
+  if (d.saleId) return `id:${d.saleId}`
+  const buyer = (d.satilanKisi || '').trim().toUpperCase()
+  return `legacy:${buyer}|${dayKey(d.satisTarihi)}`
+}
+
+function sortSaleBatch(batch: Hdd[]): Hdd[] {
+  return [...batch].sort((a, b) => {
+    const dep = a.depolama.localeCompare(b.depolama, 'tr')
+    if (dep !== 0) return dep
+    return a.serialNumber.localeCompare(b.serialNumber)
+  })
+}
+
+function dayKey(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
 }
 
 export function getStockCounts(diskler: Hdd[]) {

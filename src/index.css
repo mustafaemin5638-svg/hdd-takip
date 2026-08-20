@@ -549,6 +549,155 @@ select:focus {
   text-transform: none;
 }
 
+.sale-receipt-actions {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  padding: 0.85rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(15, 118, 110, 0.05);
+}
+
+.sale-receipt-actions .muted {
+  margin: 0;
+}
+
+.sale-package {
+  margin-top: 1.15rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(15, 118, 110, 0.22);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(15, 118, 110, 0.07), rgba(255, 255, 255, 0.7));
+}
+
+.sale-package-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.sale-package-head h4 {
+  margin: 0 0 0.2rem;
+  font-family: 'Archivo', sans-serif;
+  font-size: 1.05rem;
+}
+
+.sale-package-head .muted {
+  margin: 0;
+}
+
+.sale-package-groups {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.sale-package-group {
+  padding: 0.65rem 0.7rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--line);
+}
+
+.sale-package-group h5 {
+  margin: 0 0 0.35rem;
+  font-size: 0.92rem;
+}
+
+.sale-package-sns {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.list-category.sales {
+  background: rgba(154, 52, 18, 0.05);
+  border-color: rgba(154, 52, 18, 0.18);
+}
+
+.sale-package-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.sale-package-card {
+  margin: 0;
+}
+
+.sale-package-card-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 0.75rem 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.sale-package-card-btn:hover {
+  border-color: rgba(154, 52, 18, 0.35);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+
+.sale-package-card-main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.sale-package-card-title {
+  font-size: 1.02rem;
+  font-family: 'Archivo', sans-serif;
+}
+
+.sale-package-card-meta {
+  font-weight: 650;
+  font-size: 0.9rem;
+}
+
+.sale-package-card-deps,
+.sale-package-card-seller {
+  font-size: 0.84rem;
+}
+
+.sale-package-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.sale-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(12, 22, 34, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+}
+
+.sale-modal {
+  width: min(720px, 100%);
+  max-height: min(86vh, 900px);
+  overflow: auto;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+  padding: 0.35rem;
+}
+
 .garanti-cell {
   display: inline-flex;
   align-items: center;

@@ -12,6 +12,10 @@ export interface HddTakipApi {
   getVersion: () => Promise<string>
   installGuard: () => Promise<{ ok: boolean; mode?: string; error?: string }>
   quit: () => Promise<boolean>
+  savePdf: (payload: {
+    html: string
+    defaultFileName?: string
+  }) => Promise<{ ok: boolean; path?: string; canceled?: boolean; error?: string }>
   createOwnerDesktopShortcut: () => Promise<{ ok: boolean; path?: string; error?: string }>
   getOwnerAccess: () => Promise<{ allowed: boolean; wantsOwner: boolean }>
   enableOwnerPanel: (code: string) => Promise<{ ok: boolean; error?: string }>

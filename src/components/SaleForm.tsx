@@ -1,5 +1,11 @@
 import { GARANTI_AY_SECENEKLERI } from '../types/hdd'
+import type { AuthSession } from '../types/auth'
 import { findBySerial, sellManyDisks } from '../storage/hddStore'
+import {
+  buildSaleReceipt,
+  buildSaleReceiptHtml,
+  saleReceiptFileName,
+} from '../utils/saleReceipt'
 import { fromDayMonthYear, nowFromPc, toDayMonthYear } from '../utils/date'
 import { SerialRows } from './SerialRows'
 import { useMemo, useState, type FormEvent } from 'react'
@@ -7,9 +13,25 @@ import { useMemo, useState, type FormEvent } from 'react'
 interface Props {
   onChanged: () => void
   initialSerial?: string
+  session: AuthSession
 }
 
-export function SaleForm({ onChanged, initialSerial = '' }: Props) {
+function sellerLabel(session: AuthSession): { username: string; display: string } {
+  if (session.type === 'company') {
+    const role = session.role === 'admin' ? 'Yetkili' : 'Personel'
+    const company = session.companyName || 'Firma'
+    return {
+      username: session.username,
+      display: `${company} · ${role}: ${session.displayName || session.username}`,
+    }
+  }
+  return {
+    username: session.username,
+    display: session.displayName || session.username,
+  }
+}
+
+export function SaleForm({ onChanged, initialSerial = '', session }: Props) {
   const [serials, setSerials] = useState<string[]>(
     initialSerial ? [initialSerial, ''] : [''],
   )
@@ -18,6 +40,8 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
   const [tarih, setTarih] = useState(() => toDayMonthYear())
   const [notlar, setNotlar] = useState('')
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [lastSold, setLastSold] = useState<ReturnType<typeof buildSaleReceipt>>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
 
   const preview = useMemo(() => {
     return serials.map((raw) => {
@@ -43,6 +67,31 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
 
   const readyCount = preview.filter((p) => p?.kind === 'ok').length
 
+  async function exportPdf(receipt: NonNullable<ReturnType<typeof buildSaleReceipt>>) {
+    if (!window.hddTakip?.savePdf) {
+      setMessage({
+        type: 'err',
+        text: 'PDF kaydı Electron uygulamasında çalışır.',
+      })
+      return
+    }
+    setPdfBusy(true)
+    try {
+      const res = await window.hddTakip.savePdf({
+        html: buildSaleReceiptHtml(receipt),
+        defaultFileName: saleReceiptFileName(receipt),
+      })
+      if (res.canceled) return
+      if (!res.ok) {
+        setMessage({ type: 'err', text: res.error || 'PDF kaydedilemedi.' })
+        return
+      }
+      setMessage({ type: 'ok', text: `PDF kaydedildi: ${res.path}` })
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     const satisTarihi = fromDayMonthYear(tarih, nowFromPc())
@@ -51,12 +100,15 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
       return
     }
 
+    const seller = sellerLabel(session)
     const result = sellManyDisks({
       serialNumbers: serials,
       satilanKisi,
       garantiAy,
       satisTarihi,
       notlar,
+      satanKullanici: seller.username,
+      satanDisplayName: seller.display,
     })
 
     if (!result.ok) {
@@ -76,6 +128,9 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
           .join(', ')}${result.failed.length > 5 ? '…' : ''}`,
       )
     }
+
+    const receipt = buildSaleReceipt(result.sold)
+    setLastSold(receipt)
 
     setMessage({
       type: result.sold.length > 0 ? 'ok' : 'err',
@@ -195,6 +250,23 @@ export function SaleForm({ onChanged, initialSerial = '' }: Props) {
         <p className={message.type === 'ok' ? 'msg ok' : 'msg err'} role="status">
           {message.text}
         </p>
+      )}
+
+      {lastSold && (
+        <div className="sale-receipt-actions">
+          <p className="muted">
+            Son satış paketi: <strong>{lastSold.musteri}</strong> · {lastSold.toplam}{' '}
+            adet · {lastSold.ozetDepolama}
+          </p>
+          <button
+            type="button"
+            className="btn primary"
+            disabled={pdfBusy}
+            onClick={() => void exportPdf(lastSold)}
+          >
+            {pdfBusy ? 'PDF hazırlanıyor…' : 'Satış PDF indir'}
+          </button>
+        </div>
       )}
     </form>
   )

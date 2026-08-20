@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('hddTakip', {
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   installGuard: () => ipcRenderer.invoke('app:installGuard'),
   quit: () => ipcRenderer.invoke('app:quit'),
+  savePdf: (payload) => ipcRenderer.invoke('app:savePdf', payload),
   createOwnerDesktopShortcut: () => ipcRenderer.invoke('app:createOwnerDesktopShortcut'),
   getOwnerAccess: () => ipcRenderer.invoke('app:getOwnerAccess'),
   enableOwnerPanel: (code) => ipcRenderer.invoke('app:enableOwnerPanel', code),
@@ -30,6 +31,9 @@ contextBridge.exposeInMainWorld('hddTakip', {
     setRemoteLicenseUrl: (payload) => ipcRenderer.invoke('auth:setRemoteLicenseUrl', payload),
     getRemoteLicenseUrl: (masterPassword) =>
       ipcRenderer.invoke('auth:getRemoteLicenseUrl', masterPassword),
+    setCentralToken: (token) => ipcRenderer.invoke('auth:setCentralToken', token),
+    getCentralStatus: () => ipcRenderer.invoke('auth:getCentralStatus'),
+    syncCentralNow: () => ipcRenderer.invoke('auth:syncCentralNow'),
     updateIndividual: (payload) => ipcRenderer.invoke('auth:updateIndividual', payload),
     updateCompany: (payload) => ipcRenderer.invoke('auth:updateCompany', payload),
     updateStaffMember: (payload) => ipcRenderer.invoke('auth:updateStaffMember', payload),

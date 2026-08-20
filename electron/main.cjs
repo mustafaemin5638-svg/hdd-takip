@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
@@ -218,6 +218,48 @@ function setupAuthIpc() {
     app.quit()
     return true
   })
+  ipcMain.handle('app:savePdf', async (_e, payload) => {
+    try {
+      const html = String(payload?.html || '')
+      const defaultFileName = String(payload?.defaultFileName || 'HDD-Satis.pdf')
+      if (!html.trim()) return { ok: false, error: 'PDF içeriği boş.' }
+
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        title: 'Satış belgesini kaydet',
+        defaultPath: path.join(app.getPath('documents'), defaultFileName),
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      })
+      if (canceled || !filePath) return { ok: false, canceled: true }
+
+      const pdfWin = new BrowserWindow({
+        show: false,
+        width: 800,
+        height: 1100,
+        webPreferences: {
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      })
+      try {
+        await pdfWin.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+        )
+        await new Promise((r) => setTimeout(r, 120))
+        const buffer = await pdfWin.webContents.printToPDF({
+          printBackground: true,
+          pageSize: 'A4',
+          margins: { marginType: 'default' },
+        })
+        fs.writeFileSync(filePath, buffer)
+        return { ok: true, path: filePath }
+      } finally {
+        if (!pdfWin.isDestroyed()) pdfWin.destroy()
+      }
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) }
+    }
+  })
   ipcMain.handle('app:createOwnerDesktopShortcut', async () => {
     const denied = denyUnlessOwner()
     if (denied) return denied
@@ -394,6 +436,12 @@ Write-Output $shortcutPath
     'auth:setAccountStatus',
     ownerOnly((payload) => auth.setAccountStatus(payload)),
   )
+  ipcMain.handle(
+    'auth:setCentralToken',
+    ownerOnly((token) => auth.setCentralToken(token)),
+  )
+  ipcMain.handle('auth:getCentralStatus', ownerOnly(() => auth.getCentralStatus()))
+  ipcMain.handle('auth:syncCentralNow', ownerOnly(() => auth.syncCentralNow()))
   ipcMain.handle('auth:registerIndividual', (_e, payload) => auth.registerIndividual(payload))
   ipcMain.handle('auth:loginIndividual', (_e, payload) => auth.loginIndividual(payload))
   ipcMain.handle('auth:registerCompanyAdmin', (_e, payload) => auth.registerCompanyAdmin(payload))

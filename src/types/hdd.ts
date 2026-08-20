@@ -23,6 +23,12 @@ export interface Hdd {
   durum: HddDurum
   satilanKisi?: string
   satisTarihi?: string
+  /** Aynı anda yapılan toplu satışın ortak kimliği */
+  saleId?: string
+  /** Satışı kaydeden kullanıcı (username) */
+  satanKullanici?: string
+  /** Satışı kaydeden görünen ad */
+  satanDisplayName?: string
   notlar?: string
 }
 

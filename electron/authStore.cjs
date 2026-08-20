@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const { app } = require('electron')
 const crypto = require('crypto')
+const central = require('./centralAuth.cjs')
 
 function dataPath() {
   return path.join(app.getPath('userData'), 'auth-db.json')
@@ -45,6 +46,27 @@ function readDb() {
 function writeDb(db) {
   fs.mkdirSync(path.dirname(dataPath()), { recursive: true })
   fs.writeFileSync(dataPath(), JSON.stringify(db, null, 2), 'utf8')
+}
+
+async function pullCentralQuiet() {
+  if (!central.hasToken()) return { ok: false, skipped: true }
+  return central.pullIntoLocal(readDb, writeDb)
+}
+
+async function pushCentralAfter(result) {
+  if (!result?.ok) return result
+  if (!central.hasToken()) {
+    return {
+      ...result,
+      syncWarning:
+        'Merkezi senkron anahtarı yok. Diğer PC’deki kayıt yönetim paneline düşmez.',
+    }
+  }
+  const sync = await central.syncPush(readDb, writeDb)
+  if (!sync.ok) {
+    return { ...result, syncWarning: sync.error || 'Senkron başarısız.' }
+  }
+  return { ...result, synced: true }
 }
 
 function readMachine() {
@@ -257,7 +279,7 @@ function createLicense({
   }
 }
 
-function grantOrExtendLicense({
+async function grantOrExtendLicense({
   masterPassword,
   targetType,
   targetId,
@@ -269,6 +291,7 @@ function grantOrExtendLicense({
   if (!targetType || !targetId) return { ok: false, error: 'Hedef gerekli.' }
 
   const days = plan === 'yearly' ? 365 : 30
+  await pullCentralQuiet()
   const db = readDb()
   const existing = findActiveLicense(db, targetType, targetId)
   if (existing) {
@@ -278,7 +301,7 @@ function grantOrExtendLicense({
     existing.updatedAt = new Date().toISOString()
     if (targetLabel) existing.targetLabel = targetLabel
     writeDb(db)
-    return { ok: true, license: existing }
+    return pushCentralAfter({ ok: true, license: existing })
   }
 
   const lic = createLicense({
@@ -290,12 +313,13 @@ function grantOrExtendLicense({
   })
   db.licenses.push(lic)
   writeDb(db)
-  return { ok: true, license: lic }
+  return pushCentralAfter({ ok: true, license: lic })
 }
 
-function setLicenseStatus({ masterPassword, licenseId, status }) {
+async function setLicenseStatus({ masterPassword, licenseId, status }) {
   const check = verifyMasterPassword(masterPassword)
   if (!check.ok) return check
+  await pullCentralQuiet()
   const db = readDb()
   const lic = db.licenses.find((l) => l.id === licenseId)
   if (!lic) return { ok: false, error: 'Lisans bulunamadı.' }
@@ -305,12 +329,13 @@ function setLicenseStatus({ masterPassword, licenseId, status }) {
   lic.status = status
   lic.updatedAt = new Date().toISOString()
   writeDb(db)
-  return { ok: true, license: lic }
+  return pushCentralAfter({ ok: true, license: lic })
 }
 
-function listDirectory(masterPassword) {
+async function listDirectory(masterPassword) {
   const check = verifyMasterPassword(masterPassword)
   if (!check.ok) return check
+  await pullCentralQuiet()
   const db = readDb()
   return {
     ok: true,
@@ -338,6 +363,7 @@ function listDirectory(masterPassword) {
       })),
       license: findActiveLicense(db, 'company', c.id),
     })),
+    central: await central.getStatus(),
   }
 }
 
@@ -356,12 +382,13 @@ function getRemoteLicenseUrl(masterPassword) {
   return { ok: true, url: readDb().settings.remoteLicenseUrl || '' }
 }
 
-function registerIndividual({ username, password }) {
+async function registerIndividual({ username, password }) {
   const user = normalizeUser(username)
   const pw = String(password || '')
   if (!user || !pw) return { ok: false, error: 'Kullanıcı adı ve şifre zorunlu.' }
   if (pw.length < 4) return { ok: false, error: 'Şifre en az 4 karakter olmalı.' }
 
+  await pullCentralQuiet()
   const db = readDb()
   if (db.individuals.some((u) => u.username.toLowerCase() === user.toLowerCase())) {
     return { ok: false, error: 'Bu kullanıcı adı zaten var.' }
@@ -375,17 +402,17 @@ function registerIndividual({ username, password }) {
     createdAt: new Date().toISOString(),
   }
   db.individuals.push(record)
-  // Lisans yönetici onayından sonra verilir
   writeDb(db)
-  return {
+  const result = {
     ok: true,
     pending: true,
-    message:
-      'Kayıt alındı. Yönetici onayından sonra giriş yapabilirsin.',
+    message: 'Kayıt alındı. Yönetici onayından sonra giriş yapabilirsin.',
   }
+  return pushCentralAfter(result)
 }
 
-function loginIndividual({ username, password, remember }) {
+async function loginIndividual({ username, password, remember }) {
+  await pullCentralQuiet()
   const user = normalizeUser(username)
   const pw = String(password || '')
   const db = readDb()
@@ -422,7 +449,7 @@ function loginIndividual({ username, password, remember }) {
   return { ok: true, session: getSession() }
 }
 
-function registerCompanyAdmin({ companyName, username, password }) {
+async function registerCompanyAdmin({ companyName, username, password }) {
   const name = normalizeCompany(companyName)
   const user = normalizeUser(username)
   const pw = String(password || '')
@@ -431,6 +458,7 @@ function registerCompanyAdmin({ companyName, username, password }) {
   }
   if (pw.length < 4) return { ok: false, error: 'Şifre en az 4 karakter olmalı.' }
 
+  await pullCentralQuiet()
   const db = readDb()
   if (db.companies.some((c) => c.name.toLowerCase() === name.toLowerCase())) {
     return { ok: false, error: 'Bu firma adı zaten kayıtlı.' }
@@ -450,16 +478,16 @@ function registerCompanyAdmin({ companyName, username, password }) {
   }
   db.companies.push(company)
   writeDb(db)
-  return {
+  return pushCentralAfter({
     ok: true,
     companyId: company.id,
     pending: true,
-    message:
-      'Firma kaydı alındı. Yönetici onayından sonra giriş yapabilirsin.',
-  }
+    message: 'Firma kaydı alındı. Yönetici onayından sonra giriş yapabilirsin.',
+  })
 }
 
-function loginCompanyAdmin({ companyName, username, password, remember }) {
+async function loginCompanyAdmin({ companyName, username, password, remember }) {
+  await pullCentralQuiet()
   const name = normalizeCompany(companyName)
   const user = normalizeUser(username)
   const pw = String(password || '')
@@ -508,7 +536,8 @@ function loginCompanyAdmin({ companyName, username, password, remember }) {
   return { ok: true, session: getSession() }
 }
 
-function loginCompanyStaff({ companyName, username, password, remember }) {
+async function loginCompanyStaff({ companyName, username, password, remember }) {
+  await pullCentralQuiet()
   const name = normalizeCompany(companyName)
   const user = normalizeUser(username)
   const pw = String(password || '')
@@ -559,7 +588,7 @@ function loginCompanyStaff({ companyName, username, password, remember }) {
   return { ok: true, session: getSession() }
 }
 
-function addStaff({ username, password }) {
+async function addStaff({ username, password }) {
   if (!currentSession || currentSession.role !== 'admin') {
     return { ok: false, error: 'Sadece firma yetkilisi personel ekleyebilir.' }
   }
@@ -567,6 +596,7 @@ function addStaff({ username, password }) {
   const pw = String(password || '') || '1234'
   if (!user) return { ok: false, error: 'Personel kullanıcı adı zorunlu.' }
 
+  await pullCentralQuiet()
   const db = readDb()
   const company = db.companies.find((c) => c.id === currentSession.companyId)
   if (!company) return { ok: false, error: 'Firma bulunamadı.' }
@@ -584,11 +614,11 @@ function addStaff({ username, password }) {
     createdAt: new Date().toISOString(),
   })
   writeDb(db)
-  return {
+  return pushCentralAfter({
     ok: true,
     pending: true,
     message: 'Personel eklendi. Yönetici onayından sonra giriş yapabilir.',
-  }
+  })
 }
 
 /**
@@ -597,7 +627,7 @@ function addStaff({ username, password }) {
  * staff için companyId + targetId (staffId) gerekli.
  * Onayda şahıs/firma için 7 gün deneme lisansı (yoksa) verilir.
  */
-function setAccountStatus({
+async function setAccountStatus({
   masterPassword,
   targetType,
   targetId,
@@ -610,6 +640,7 @@ function setAccountStatus({
     return { ok: false, error: 'Geçersiz onay durumu.' }
   }
 
+  await pullCentralQuiet()
   const db = readDb()
 
   if (targetType === 'individual') {
@@ -629,7 +660,7 @@ function setAccountStatus({
       )
     }
     writeDb(db)
-    return { ok: true, accountStatus: status }
+    return pushCentralAfter({ ok: true, accountStatus: status })
   }
 
   if (targetType === 'company') {
@@ -649,7 +680,7 @@ function setAccountStatus({
       )
     }
     writeDb(db)
-    return { ok: true, accountStatus: status }
+    return pushCentralAfter({ ok: true, accountStatus: status })
   }
 
   if (targetType === 'staff') {
@@ -660,7 +691,7 @@ function setAccountStatus({
     if (!s) return { ok: false, error: 'Personel bulunamadı.' }
     s.accountStatus = status
     writeDb(db)
-    return { ok: true, accountStatus: status }
+    return pushCentralAfter({ ok: true, accountStatus: status })
   }
 
   return { ok: false, error: 'Geçersiz hedef tipi.' }
@@ -968,4 +999,12 @@ module.exports = {
   deleteCompany,
   deleteStaffMember,
   setAccountStatus,
+  setCentralToken: central.setToken,
+  getCentralStatus: central.getStatus,
+  syncCentralNow: async () => {
+    if (!central.hasToken()) {
+      return { ok: false, error: 'Merkezi senkron anahtarı yok.' }
+    }
+    return central.syncPush(readDb, writeDb)
+  },
 }

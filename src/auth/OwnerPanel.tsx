@@ -60,7 +60,8 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
   const [dir, setDir] = useState<Directory | null>(null)
-  const [remoteUrl, setRemoteUrl] = useState('')
+  const [centralToken, setCentralToken] = useState('')
+  const [centralStatus, setCentralStatus] = useState('')
   const [editIndividual, setEditIndividual] = useState<string | null>(null)
   const [editCompany, setEditCompany] = useState<string | null>(null)
   const [draftInd, setDraftInd] = useState({ username: '', password: '' })
@@ -126,8 +127,14 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
       individuals: (res.individuals || []) as Directory['individuals'],
       companies: (res.companies || []) as Directory['companies'],
     })
-    const remote = await window.hddTakip?.auth.getRemoteLicenseUrl?.(masterPw)
-    if (remote?.ok) setRemoteUrl(remote.url || '')
+    const st = await window.hddTakip?.auth.getCentralStatus?.()
+    if (st?.configured) {
+      setCentralStatus(
+        `Senkron açık · bekleyen ${st.pending ?? 0} · hesap ${st.individuals ?? 0}/${st.companies ?? 0}`,
+      )
+    } else {
+      setCentralStatus(st?.message || 'Senkron kapalı — diğer PC kayıtları gelmez.')
+    }
     setUnlocked(true)
     setError('')
   }
@@ -139,6 +146,37 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
       individuals: (res.individuals || []) as Directory['individuals'],
       companies: (res.companies || []) as Directory['companies'],
     })
+    const st = await window.hddTakip?.auth.getCentralStatus?.()
+    if (st?.ok && st.configured) {
+      setCentralStatus(
+        `Senkron açık · bekleyen ${st.pending ?? 0} · güncelleme ${st.updatedAt || '—'}`,
+      )
+    }
+  }
+
+  async function saveCentral(e: FormEvent) {
+    e.preventDefault()
+    const save = await window.hddTakip?.auth.setCentralToken?.(centralToken)
+    if (!save?.ok && (save as { error?: string } | undefined)?.error) {
+      return setError((save as { error?: string }).error || 'Anahtar kaydedilemedi')
+    }
+    const sync = await window.hddTakip?.auth.syncCentralNow?.()
+    if (!sync?.ok) {
+      setError(sync?.error || 'Senkron başarısız — anahtarı kontrol et.')
+      return
+    }
+    setInfo('Merkezi senkron etkin. Diğer PC kayıtları bu panele düşer.')
+    setError('')
+    setCentralToken('')
+    await refresh()
+  }
+
+  async function syncNow() {
+    const sync = await window.hddTakip?.auth.syncCentralNow?.()
+    if (!sync?.ok) return setError(sync?.error || 'Senkron başarısız')
+    setInfo('Merkezi senkron yenilendi.')
+    setError('')
+    await refresh()
   }
 
   async function grant(
@@ -286,16 +324,6 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
     setInfo('Personel bilgileri güncellendi.')
     setError('')
     refresh()
-  }
-
-  async function saveRemote(e: FormEvent) {
-    e.preventDefault()
-    const res = await window.hddTakip?.auth.setRemoteLicenseUrl?.({
-      masterPassword: masterPw,
-      url: remoteUrl,
-    })
-    if (!res?.ok) return setError(res?.error || 'Kaydedilemedi')
-    setInfo('Uzaktan lisans URL kaydedildi. Senkron sonraki adımda aktifleşecek.')
   }
 
   const backLabel = 'Kapat'
@@ -900,22 +928,32 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
         )}
       </div>
 
-      <form className="panel-form owner-remote" onSubmit={saveRemote}>
-        <h3>Uzaktan panel</h3>
+      <form className="panel-form owner-remote" onSubmit={saveCentral}>
+        <h3>Merkezi senkron (diğer PC kayıtları)</h3>
         <p className="hint">
-          Harici lisans paneli JSON URL’si. Kayıt edilir; canlı senkron sonraki adımda.
+          Başka bilgisayardan gelen kayıt taleplerinin bu panele düşmesi için GitHub senkron
+          anahtarı gerekir. Anahtar bir kez kaydedilir; istemci kurulumlarında da paket içine
+          gömülür.
         </p>
+        {centralStatus && <p className="muted">{centralStatus}</p>}
         <div className="field">
-          <label>Remote license URL</label>
+          <label>GitHub token (repo erişimli)</label>
           <input
-            value={remoteUrl}
-            onChange={(e) => setRemoteUrl(e.target.value)}
-            placeholder="https://..."
+            type="password"
+            value={centralToken}
+            onChange={(e) => setCentralToken(e.target.value)}
+            placeholder="ghp_… veya gho_…"
+            autoComplete="off"
           />
         </div>
-        <button type="submit" className="btn primary">
-          URL kaydet
-        </button>
+        <div className="inline-actions">
+          <button type="submit" className="btn primary">
+            Anahtarı kaydet ve senkronla
+          </button>
+          <button type="button" className="btn" onClick={() => void syncNow()}>
+            Şimdi yenile
+          </button>
+        </div>
       </form>
     </div>
   )

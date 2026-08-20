@@ -144,7 +144,8 @@ function MainApp({
             <section className="section">
               <h2>S/N Sorgula</h2>
               <p className="section-desc">
-                Seri numarasını gir; stoğa giriş, satış tarihi ve alıcı bilgisi buradan çıkar.
+                Seri numarasını gir; disk bilgisi ve (satıldıysa) aynı müşteriye giden satış
+                paketini gör. PDF satış belgesi indirebilirsin.
               </p>
               <QueryPanel />
             </section>
@@ -165,12 +166,13 @@ function MainApp({
             <section className="section wide">
               <h2>Satış Kaydı</h2>
               <p className="section-desc">
-                Alıcıyı ve garanti süresini (veya Garanti yok) bir kez seç; S/N’leri gir —
-                özellikler stoktan otomatik gelir.
+                Alıcıyı ve garanti süresini bir kez seç; S/N’leri gir. Toplu satış tek paket
+                olur — PDF satış belgesi çıkarabilirsin.
               </p>
               <SaleForm
                 key={saleSerial || 'empty'}
                 initialSerial={saleSerial}
+                session={session}
                 onChanged={() => {
                   setSaleSerial('')
                   refresh()

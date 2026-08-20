@@ -100,6 +100,18 @@ export interface AuthApi {
     error?: string
     url?: string
   }>
+  setCentralToken: (token: string) => Promise<{ ok: boolean; error?: string }>
+  getCentralStatus: () => Promise<{
+    ok: boolean
+    configured?: boolean
+    message?: string
+    error?: string
+    updatedAt?: string | null
+    pending?: number
+    individuals?: number
+    companies?: number
+  }>
+  syncCentralNow: () => Promise<{ ok: boolean; error?: string }>
   updateIndividual: (payload: {
     masterPassword: string
     id: string

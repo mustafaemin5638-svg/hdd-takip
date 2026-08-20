@@ -52,6 +52,26 @@ pkg.version = next
 writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)
 console.log(`Sürüm: ${next}`)
 
+// İstemci kurulumlarına merkezi senkron anahtarı göm (diğer PC kayıtları için)
+const token =
+  process.env.HDD_CENTRAL_TOKEN ||
+  process.env.GH_TOKEN ||
+  process.env.GITHUB_TOKEN ||
+  ''
+const tokenFile = path.join(root, 'electron', 'centralAuthToken.cjs')
+if (token) {
+  writeFileSync(
+    tokenFile,
+    `module.exports = { token: ${JSON.stringify(token)} }\n`,
+    'utf8',
+  )
+  console.log('centralAuthToken.cjs yazıldı (paket içi senkron).')
+} else {
+  console.warn(
+    'Uyarı: HDD_CENTRAL_TOKEN/GH_TOKEN yok — diğer PC kayıtları merkeze gitmeyebilir.',
+  )
+}
+
 function run(cmd, args) {
   const result = spawnSync(cmd, args, {
     cwd: root,

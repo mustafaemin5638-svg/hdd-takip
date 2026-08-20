@@ -6,9 +6,10 @@ import {
   normalizeTur,
   turLabel,
 } from '../types/hdd'
-import { findBySerial } from '../storage/hddStore'
+import { findBySerial, findSaleBatch } from '../storage/hddStore'
 import { formatDate } from '../utils/date'
 import { GarantiIsik } from './GarantiIsik'
+import { SalePackageView } from './SalePackageView'
 import { useState, type FormEvent } from 'react'
 
 function garantiDetay(disk: Hdd): string {
@@ -26,6 +27,7 @@ function garantiDetay(disk: Hdd): string {
 export function QueryPanel() {
   const [serialNumber, setSerialNumber] = useState('')
   const [result, setResult] = useState<Hdd | null | undefined>(undefined)
+  const [batch, setBatch] = useState<Hdd[]>([])
   const [searched, setSearched] = useState('')
 
   function handleSubmit(e: FormEvent) {
@@ -34,9 +36,12 @@ export function QueryPanel() {
     setSearched(sn.toUpperCase())
     if (!sn) {
       setResult(undefined)
+      setBatch([])
       return
     }
-    setResult(findBySerial(sn) ?? null)
+    const found = findBySerial(sn) ?? null
+    setResult(found)
+    setBatch(found && found.durum === 'satildi' ? findSaleBatch(found) : found ? [found] : [])
   }
 
   return (
@@ -115,6 +120,12 @@ export function QueryPanel() {
               <dt>Kime verildi</dt>
               <dd>{result.satilanKisi || '—'}</dd>
             </div>
+            {result.satanDisplayName && (
+              <div className="span-2">
+                <dt>İşlemi yapan</dt>
+                <dd>{result.satanDisplayName}</dd>
+              </div>
+            )}
             {result.notlar && (
               <div className="span-2">
                 <dt>Not</dt>
@@ -122,6 +133,10 @@ export function QueryPanel() {
               </div>
             )}
           </dl>
+
+          {result.durum === 'satildi' && (
+            <SalePackageView diskler={batch.length ? batch : [result]} />
+          )}
         </div>
       )}
     </div>
