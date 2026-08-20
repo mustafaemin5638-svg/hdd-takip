@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const os = require('os')
 const { app } = require('electron')
 const crypto = require('crypto')
 const central = require('./centralAuth.cjs')
@@ -93,6 +94,43 @@ function normalizeUser(u) {
 
 function normalizeCompany(name) {
   return String(name || '').trim()
+}
+
+/** Aynı LAN (/24) parmak izi — kullanıcı adı çakışması yalnız bu kapsamda */
+function getLanScope() {
+  try {
+    const nets = os.networkInterfaces()
+    const scopes = new Set()
+    for (const list of Object.values(nets || {})) {
+      for (const n of list || []) {
+        const family = n.family === 4 || n.family === 'IPv4'
+        if (!family || n.internal) continue
+        const parts = String(n.address || '').split('.')
+        if (parts.length === 4) {
+          scopes.add(`${parts[0]}.${parts[1]}.${parts[2]}`)
+        }
+      }
+    }
+    const key = [...scopes].sort().join('|') || 'offline'
+    return crypto.createHash('sha256').update(key).digest('hex').slice(0, 16)
+  } catch {
+    return 'offline'
+  }
+}
+
+function sameLanScope(a, b) {
+  return String(a || '') === String(b || '')
+}
+
+function usernameTakenOnLan(list, username, lanScope, exceptId) {
+  const target = username.toLowerCase()
+  return (list || []).some((u) => {
+    if (u.id === exceptId) return false
+    if (String(u.username || '').toLowerCase() !== target) return false
+    // Eski kayıt (lanScope yok): her yerde koru
+    if (!u.lanScope) return true
+    return sameLanScope(u.lanScope, lanScope)
+  })
 }
 
 function publicSession(session) {
@@ -390,14 +428,16 @@ async function registerIndividual({ username, password }) {
 
   await pullCentralQuiet()
   const db = readDb()
-  if (db.individuals.some((u) => u.username.toLowerCase() === user.toLowerCase())) {
-    return { ok: false, error: 'Bu kullanıcı adı zaten var.' }
+  const lanScope = getLanScope()
+  if (usernameTakenOnLan(db.individuals, user, lanScope)) {
+    return { ok: false, error: 'Bu ağda bu kullanıcı adı zaten var.' }
   }
 
   const record = {
     id: crypto.randomUUID(),
     username: user,
     password: pw,
+    lanScope,
     accountStatus: 'pending',
     createdAt: new Date().toISOString(),
   }
@@ -416,10 +456,20 @@ async function loginIndividual({ username, password, remember }) {
   const user = normalizeUser(username)
   const pw = String(password || '')
   const db = readDb()
-  const found = db.individuals.find(
+  const lanScope = getLanScope()
+  const matches = db.individuals.filter(
     (u) => u.username.toLowerCase() === user.toLowerCase() && u.password === pw,
   )
+  const found =
+    matches.find((u) => sameLanScope(u.lanScope, lanScope)) ||
+    matches.find((u) => !u.lanScope) ||
+    matches[0]
   if (!found) return { ok: false, error: 'Kullanıcı adı veya şifre hatalı.' }
+
+  if (!found.lanScope) {
+    found.lanScope = lanScope
+    writeDb(db)
+  }
 
   const approved = assertAccountApproved(found, 'Hesabın')
   if (!approved.ok) return approved
@@ -769,13 +819,17 @@ function updateIndividual({ masterPassword, id, username, password }) {
   const user = db.individuals.find((u) => u.id === id)
   if (!user) return { ok: false, error: 'Şahıs bulunamadı.' }
 
-  const clash = db.individuals.some(
-    (u) => u.id !== id && u.username.toLowerCase() === userName.toLowerCase(),
+  const clash = usernameTakenOnLan(
+    db.individuals,
+    userName,
+    user.lanScope || getLanScope(),
+    id,
   )
-  if (clash) return { ok: false, error: 'Bu kullanıcı adı başka bir şahısta var.' }
+  if (clash) return { ok: false, error: 'Bu ağda bu kullanıcı adı zaten var.' }
 
   user.username = userName
   user.password = pw
+  if (!user.lanScope) user.lanScope = getLanScope()
 
   for (const lic of db.licenses) {
     if (lic.targetType === 'individual' && lic.targetId === id) {

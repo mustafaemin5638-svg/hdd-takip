@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import type { AuthSession, RememberedLogin } from '../types/auth'
+import { LoginUpdateBar } from './LoginUpdateBar'
 
 type GateView =
   | 'chooser'
@@ -126,16 +127,19 @@ export function LoginFlow({ onLoggedIn }: Props) {
     return (
       <div className="login-shell">
         <aside className="login-brand">
-          <p className="login-kicker">NEXTSOFTWARE</p>
-          <h1 className="login-brand-title">HDD TAKİP</h1>
-          <p className="login-brand-copy">
-            Disk stok ve satış takibi. Şahıs veya firma hesabıyla güvenli giriş.
-          </p>
-          <ul className="login-brand-points">
-            <li>Aylık / yıllık lisans</li>
-            <li>Firma personeli ortak stok</li>
-            <li>S/N ile hızlı sorgu</li>
-          </ul>
+          <div className="login-brand-top">
+            <p className="login-kicker">NEXTSOFTWARE</p>
+            <h1 className="login-brand-title">HDD TAKİP</h1>
+            <p className="login-brand-copy">
+              Disk stok ve satış takibi. Şahıs veya firma hesabıyla güvenli giriş.
+            </p>
+            <ul className="login-brand-points">
+              <li>Aylık / yıllık lisans</li>
+              <li>Firma personeli ortak stok</li>
+              <li>S/N ile hızlı sorgu</li>
+            </ul>
+          </div>
+          <LoginUpdateBar />
         </aside>
         <section className="login-panel">
           <div className="login-panel-inner">
