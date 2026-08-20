@@ -20,7 +20,11 @@ export function LoginUpdateBar() {
         setHint('PC taranıyor…')
         setBusy(true)
       } else if (payload.status === 'not-available') {
-        setHint(version ? `Güncelsin (v${version}).` : 'Güncelsin.')
+        setHint(
+          version
+            ? `Mevcut güncelleme yok (v${version}).`
+            : 'Mevcut güncelleme yok.',
+        )
         setBusy(false)
       } else if (payload.status === 'available') {
         setHint(`Yeni sürüm bulundu: v${payload.version}`)
@@ -47,13 +51,19 @@ export function LoginUpdateBar() {
     setHint('PC taranıyor…')
     setStatus({ status: 'checking' })
     try {
-      const remote = await window.hddTakip.checkForUpdates()
-      if (remote && (!version || remote !== version)) {
-        setStatus({ status: 'available', version: remote })
-        setHint(`Yeni sürüm bulundu: v${remote}`)
+      const result = await window.hddTakip.checkForUpdates()
+      const current = result?.current || version
+      if (current) setVersion(current)
+      if (result?.available && result.version) {
+        setStatus({ status: 'available', version: result.version })
+        setHint(`Yeni sürüm bulundu: v${result.version}`)
       } else {
         setStatus({ status: 'not-available' })
-        setHint(version ? `Güncelsin (v${version}).` : 'Güncelsin.')
+        setHint(
+          current
+            ? `Mevcut güncelleme yok (v${current}).`
+            : 'Mevcut güncelleme yok.',
+        )
       }
     } catch (err) {
       setStatus({
@@ -72,10 +82,12 @@ export function LoginUpdateBar() {
     setHint('Güncelleme başlatılıyor…')
     try {
       await window.hddTakip.downloadUpdate()
-    } catch {
+    } catch (err) {
       setBusy(false)
-      setStatus({ status: 'error', message: 'Güncelleme indirilemedi.' })
-      setHint('Güncelleme indirilemedi.')
+      const msg =
+        err instanceof Error ? err.message : 'Güncelleme indirilemedi.'
+      setStatus({ status: 'error', message: msg })
+      setHint(msg)
     }
   }
 
@@ -83,7 +95,14 @@ export function LoginUpdateBar() {
     if (!window.hddTakip?.installUpdate) return
     setBusy(true)
     setHint('Kuruluyor, uygulama yeniden başlayacak…')
-    await window.hddTakip.installUpdate()
+    try {
+      await window.hddTakip.installUpdate()
+    } catch (err) {
+      setBusy(false)
+      const msg = err instanceof Error ? err.message : 'Kurulum başarısız.'
+      setStatus({ status: 'error', message: msg })
+      setHint(msg)
+    }
   }
 
   const available = status?.status === 'available'

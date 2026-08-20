@@ -129,14 +129,42 @@ function setupAutoUpdater() {
     debug: (...args) => console.log('[updater:debug]', ...args),
   }
 
+  /** "2.2.2" > "2.2.1" — eşit veya düşükse false */
+  function isNewerVersion(remote, current) {
+    const parse = (v) =>
+      String(v || '')
+        .replace(/^v/i, '')
+        .split(/[.-]/)
+        .map((p) => {
+          const n = parseInt(p, 10)
+          return Number.isFinite(n) ? n : 0
+        })
+    const a = parse(remote)
+    const b = parse(current)
+    const len = Math.max(a.length, b.length)
+    for (let i = 0; i < len; i += 1) {
+      const x = a[i] || 0
+      const y = b[i] || 0
+      if (x > y) return true
+      if (x < y) return false
+    }
+    return false
+  }
+
   autoUpdater.on('checking-for-update', () => {
     sendToRenderer('updater:status', { status: 'checking' })
   })
 
   autoUpdater.on('update-available', (info) => {
+    const current = app.getVersion()
+    const remote = info?.version
+    if (!isNewerVersion(remote, current)) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return
+    }
     sendToRenderer('updater:status', {
       status: 'available',
-      version: info.version,
+      version: remote,
       releaseNotes: info.releaseNotes ?? null,
     })
   })
@@ -155,9 +183,15 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('update-downloaded', (info) => {
+    const current = app.getVersion()
+    const remote = info?.version
+    if (!isNewerVersion(remote, current)) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return
+    }
     sendToRenderer('updater:status', {
       status: 'downloaded',
-      version: info.version,
+      version: remote,
     })
   })
 
@@ -175,7 +209,17 @@ function setupAutoUpdater() {
   ipcMain.handle('updater:check', async () => {
     try {
       const result = await autoUpdater.checkForUpdates()
-      return result?.updateInfo?.version ?? null
+      const remote = result?.updateInfo?.version ?? null
+      const current = app.getVersion()
+      if (!remote || !isNewerVersion(remote, current)) {
+        sendToRenderer('updater:status', { status: 'not-available' })
+        return { available: false, version: null, current }
+      }
+      sendToRenderer('updater:status', {
+        status: 'available',
+        version: remote,
+      })
+      return { available: true, version: remote, current }
     } catch (err) {
       const raw = err?.message || String(err)
       sendToRenderer('updater:status', { status: 'error', message: raw })
@@ -184,11 +228,21 @@ function setupAutoUpdater() {
   })
 
   ipcMain.handle('updater:download', async () => {
+    const pending = autoUpdater.updateInfo?.version
+    if (!pending || !isNewerVersion(pending, app.getVersion())) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      throw new Error('Mevcut güncelleme yok.')
+    }
     await autoUpdater.downloadUpdate()
     return true
   })
 
   ipcMain.handle('updater:install', () => {
+    const pending = autoUpdater.updateInfo?.version
+    if (!pending || !isNewerVersion(pending, app.getVersion())) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      throw new Error('Mevcut güncelleme yok.')
+    }
     // Sessiz kurulum: NSIS "Yükleniyor" penceresini gösterme
     autoUpdater.quitAndInstall(true, true)
     return true

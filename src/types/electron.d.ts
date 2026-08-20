@@ -19,7 +19,11 @@ export interface HddTakipApi {
   createOwnerDesktopShortcut: () => Promise<{ ok: boolean; path?: string; error?: string }>
   getOwnerAccess: () => Promise<{ allowed: boolean; wantsOwner: boolean }>
   enableOwnerPanel: (code: string) => Promise<{ ok: boolean; error?: string }>
-  checkForUpdates: () => Promise<string | null>
+  checkForUpdates: () => Promise<{
+    available: boolean
+    version: string | null
+    current: string
+  }>
   downloadUpdate: () => Promise<boolean>
   installUpdate: () => Promise<boolean>
   onUpdaterStatus: (callback: (payload: UpdaterStatus) => void) => () => void

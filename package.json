@@ -1,7 +1,7 @@
 {
   "name": "hdd-takip",
   "private": true,
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "HDD TAKİP — disk S/N stok ve satış takip uygulaması",
   "author": "NEXTSOFTWARE",
   "main": "electron/main.cjs",

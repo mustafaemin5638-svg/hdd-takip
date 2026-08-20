@@ -68,11 +68,13 @@ function MainApp({
   async function checkUpdate() {
     setUpdateMsg('Kontrol ediliyor…')
     try {
-      const v = await window.hddTakip?.checkForUpdates()
-      if (v && v !== appVersion) {
-        setUpdateMsg(`Yeni sürüm: v${v}. Üstteki bannerdan indir.`)
+      const result = await window.hddTakip?.checkForUpdates()
+      if (result?.available && result.version) {
+        setUpdateMsg(`Yeni sürüm: v${result.version}. Üstteki bannerdan indir.`)
       } else {
-        setUpdateMsg(`Güncelsin (v${appVersion || v || '—'}).`)
+        setUpdateMsg(
+          `Mevcut güncelleme yok (v${result?.current || appVersion || '—'}).`,
+        )
       }
     } catch (err) {
       setUpdateMsg(err instanceof Error ? err.message : 'Kontrol başarısız.')
