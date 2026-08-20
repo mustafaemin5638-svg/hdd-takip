@@ -1,6 +1,5 @@
 !macro customInstall
-  ; Yönetici paneli müşteri kurulumlarına gitmez — eski kısayolları da temizle
-  Delete "$PROFILE\Desktop\HDD TAKIP Yonetici.lnk"
-  Delete "$DESKTOP\HDD TAKIP Yonetici.lnk"
-  Delete "$SMPROGRAMS\$StartMenuGroup\HDD TAKIP Yonetici.lnk"
+  ; Yönetici paneli müşteri kurulumlarına hiç yazılmaz.
+  ; Eski sürümlerde kalan Yonetici kısayollarını silme — sahibi PC'de
+  ; güncelleme sonrası yönetim paneli kaybolmasın.
 !macroend
