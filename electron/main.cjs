@@ -117,7 +117,21 @@ function createWindow() {
 }
 
 function setupAutoUpdater() {
-  if (isDev) return
+  if (isDev) {
+    // Geliştirmede de IPC kalsın — UI “handler yok” hatası vermesin
+    ipcMain.handle('updater:check', async () => {
+      const current = app.getVersion()
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return { available: false, version: null, current }
+    })
+    ipcMain.handle('updater:download', async () => {
+      throw new Error('Geliştirme modunda güncelleme yok.')
+    })
+    ipcMain.handle('updater:install', async () => {
+      throw new Error('Geliştirme modunda güncelleme yok.')
+    })
+    return
+  }
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
@@ -489,6 +503,10 @@ Write-Output $shortcutPath
   ipcMain.handle(
     'auth:setAccountStatus',
     ownerOnly((payload) => auth.setAccountStatus(payload)),
+  )
+  ipcMain.handle(
+    'auth:unbindBoundPc',
+    ownerOnly((payload) => auth.unbindBoundPc(payload)),
   )
   ipcMain.handle(
     'auth:setCentralToken',

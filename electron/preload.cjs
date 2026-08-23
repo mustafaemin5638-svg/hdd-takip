@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('hddTakip', {
     deleteCompany: (payload) => ipcRenderer.invoke('auth:deleteCompany', payload),
     deleteStaffMember: (payload) => ipcRenderer.invoke('auth:deleteStaffMember', payload),
     setAccountStatus: (payload) => ipcRenderer.invoke('auth:setAccountStatus', payload),
+    unbindBoundPc: (payload) => ipcRenderer.invoke('auth:unbindBoundPc', payload),
     registerIndividual: (payload) => ipcRenderer.invoke('auth:registerIndividual', payload),
     loginIndividual: (payload) => ipcRenderer.invoke('auth:loginIndividual', payload),
     registerCompanyAdmin: (payload) =>

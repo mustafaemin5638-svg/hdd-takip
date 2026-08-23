@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import type { BoundPcInfo } from '../types/auth'
 
 interface Props {
   onBack: () => void
@@ -17,6 +18,7 @@ interface StaffRow {
   username: string
   password: string
   accountStatus?: string
+  boundPc?: BoundPcInfo | null
 }
 
 interface Directory {
@@ -27,6 +29,7 @@ interface Directory {
     accountStatus?: string
     createdAt?: string
     license?: LicInfo | null
+    boundPc?: BoundPcInfo | null
   }[]
   companies: {
     id: string
@@ -35,6 +38,7 @@ interface Directory {
     adminPassword: string
     accountStatus?: string
     createdAt?: string
+    adminBoundPc?: BoundPcInfo | null
     staff: StaffRow[]
     license?: LicInfo | null
   }[]
@@ -51,6 +55,11 @@ function fmtDate(iso?: string) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+}
+
+function pcLabel(pc?: BoundPcInfo | null) {
+  if (!pc?.machineId) return null
+  return pc.label || pc.hostname || pc.machineId.slice(0, 8)
 }
 
 export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
@@ -281,6 +290,31 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
     refresh()
   }
 
+  async function unbindPc(
+    targetType: 'individual' | 'company-admin' | 'staff',
+    targetId: string,
+    label: string,
+    companyId?: string,
+  ) {
+    if (
+      !window.confirm(
+        `${label} için PC bağlantısını kes? Sonraki giriş yaptığı bilgisayar yeni kayıtlı PC olur.`,
+      )
+    ) {
+      return
+    }
+    const res = await window.hddTakip?.auth.unbindBoundPc?.({
+      masterPassword: masterPw,
+      targetType,
+      targetId,
+      companyId,
+    })
+    if (!res?.ok) return setError(res?.error || 'PC bağlantısı kesilemedi')
+    setInfo(`${label} — PC bağlantısı kesildi.`)
+    setError('')
+    refresh()
+  }
+
   async function saveIndividual(id: string) {
     const res = await window.hddTakip?.auth.updateIndividual?.({
       masterPassword: masterPw,
@@ -502,12 +536,14 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                 <th>Kullanıcı</th>
                 <th>Şifre</th>
                 <th>Durum / Lisans</th>
+                <th>Kayıtlı PC</th>
                 <th>İşlem</th>
               </tr>
             </thead>
             <tbody>
               {dir!.individuals.map((u) => {
                 const editing = editIndividual === u.id
+                const pc = pcLabel(u.boundPc)
                 return (
                   <tr key={u.id}>
                     <td>
@@ -555,6 +591,35 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                         </>
                       ) : (
                         <span className="sn-hint err">Lisans yok</span>
+                      )}
+                    </td>
+                    <td>
+                      {pc ? (
+                        <>
+                          <div className="mono" style={{ fontSize: '0.82rem' }}>
+                            {pc}
+                          </div>
+                          {u.boundPc?.lanIp ? (
+                            <div className="muted">IP {u.boundPc.lanIp}</div>
+                          ) : null}
+                          {u.boundPc?.lastLoginAt ? (
+                            <div className="muted">
+                              Son giriş {fmtDate(u.boundPc.lastLoginAt)}
+                            </div>
+                          ) : null}
+                          {!editing && (
+                            <button
+                              type="button"
+                              className="btn small"
+                              style={{ marginTop: '0.35rem' }}
+                              onClick={() => unbindPc('individual', u.id, u.username)}
+                            >
+                              PC bağlantısını kes
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <span className="muted">Henüz bağlanmadı</span>
                       )}
                     </td>
                     <td>
@@ -663,12 +728,14 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                 <th>Firma / personel</th>
                 <th>Yetkili</th>
                 <th>Durum / Lisans</th>
+                <th>Kayıtlı PC</th>
                 <th>İşlem</th>
               </tr>
             </thead>
             <tbody>
               {dir!.companies.map((c) => {
                 const editing = editCompany === c.id
+                const adminPc = pcLabel(c.adminBoundPc)
                 return (
                   <Fragment key={c.id}>
                     <tr>
@@ -739,6 +806,33 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                           </>
                         ) : (
                           <span className="sn-hint err">Lisans yok</span>
+                        )}
+                      </td>
+                      <td>
+                        {adminPc ? (
+                          <>
+                            <div className="muted">Yetkili PC</div>
+                            <div className="mono" style={{ fontSize: '0.82rem' }}>
+                              {adminPc}
+                            </div>
+                            {c.adminBoundPc?.lanIp ? (
+                              <div className="muted">IP {c.adminBoundPc.lanIp}</div>
+                            ) : null}
+                            {!editing && (
+                              <button
+                                type="button"
+                                className="btn small"
+                                style={{ marginTop: '0.35rem' }}
+                                onClick={() =>
+                                  unbindPc('company-admin', c.id, `${c.name} yetkili`)
+                                }
+                              >
+                                PC bağlantısını kes
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <span className="muted">Yetkili: henüz bağlanmadı</span>
                         )}
                       </td>
                       <td>
@@ -844,6 +938,44 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                         </div>
                       </td>
                     </tr>
+                    {!editing &&
+                      c.staff.map((s) => (
+                        <tr key={`${c.id}-view-${s.id}`} className="owner-staff-row">
+                          <td>
+                            <span className="muted">Personel · </span>
+                            <span className="mono">{s.username}</span>
+                          </td>
+                          <td className="mono">{s.password}</td>
+                          <td>
+                            <div className="muted">{statusLabel(s.accountStatus)}</div>
+                          </td>
+                          <td>
+                            {pcLabel(s.boundPc) ? (
+                              <>
+                                <div className="mono" style={{ fontSize: '0.82rem' }}>
+                                  {pcLabel(s.boundPc)}
+                                </div>
+                                {s.boundPc?.lanIp ? (
+                                  <div className="muted">IP {s.boundPc.lanIp}</div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="btn small"
+                                  style={{ marginTop: '0.35rem' }}
+                                  onClick={() =>
+                                    unbindPc('staff', s.id, s.username, c.id)
+                                  }
+                                >
+                                  PC bağlantısını kes
+                                </button>
+                              </>
+                            ) : (
+                              <span className="muted">Henüz bağlanmadı</span>
+                            )}
+                          </td>
+                          <td />
+                        </tr>
+                      ))}
                     {editing &&
                       c.staff.map((s) => (
                         <tr key={`${c.id}-${s.id}`} className="owner-staff-row">
@@ -878,7 +1010,31 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                               />
                             </div>
                           </td>
-                          <td colSpan={2}>
+                          <td>
+                            <div className="muted">{statusLabel(s.accountStatus)}</div>
+                          </td>
+                          <td>
+                            {pcLabel(s.boundPc) ? (
+                              <>
+                                <div className="mono" style={{ fontSize: '0.82rem' }}>
+                                  {pcLabel(s.boundPc)}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="btn small"
+                                  style={{ marginTop: '0.35rem' }}
+                                  onClick={() =>
+                                    unbindPc('staff', s.id, s.username, c.id)
+                                  }
+                                >
+                                  PC bağlantısını kes
+                                </button>
+                              </>
+                            ) : (
+                              <span className="muted">Henüz bağlanmadı</span>
+                            )}
+                          </td>
+                          <td>
                             <div className="owner-actions">
                               {s.accountStatus === 'pending' && (
                                 <>

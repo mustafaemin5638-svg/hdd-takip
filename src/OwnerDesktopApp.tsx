@@ -50,7 +50,7 @@ export default function OwnerDesktopApp() {
   if (access === 'denied') {
     return (
       <div className="auth-screen">
-        <div className="login-card">
+        <div className="auth-card">
           <p className="login-kicker">NEXTSOFTWARE</p>
           <h1>Yönetici paneli</h1>
           <p className="section-desc">

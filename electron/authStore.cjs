@@ -70,6 +70,30 @@ async function pushCentralAfter(result) {
   return { ...result, synced: true }
 }
 
+/** Silme vb. — yerel kaynak doğru, uzak liste tamamen yerelle değiştirilir */
+async function pushCentralReplace(result) {
+  if (!result?.ok) return result
+  if (!central.hasToken()) {
+    return {
+      ...result,
+      syncWarning:
+        'Merkezi senkron anahtarı yok. Diğer PC’deki kayıt yönetim paneline düşmez.',
+    }
+  }
+  const sync = await central.pushFromLocal(readDb)
+  if (!sync.ok) {
+    return { ...result, syncWarning: sync.error || 'Senkron başarısız.' }
+  }
+  return { ...result, synced: true }
+}
+
+function touchUpdated(record) {
+  if (record && typeof record === 'object') {
+    record.updatedAt = new Date().toISOString()
+  }
+  return record
+}
+
 function readMachine() {
   try {
     return JSON.parse(fs.readFileSync(machinePath(), 'utf8'))
@@ -384,6 +408,7 @@ async function listDirectory(masterPassword) {
       createdAt: u.createdAt,
       accountStatus: accountStatusOf(u),
       license: findActiveLicense(db, 'individual', u.id),
+      boundPc: publicBoundPc(u.boundPc),
     })),
     companies: db.companies.map((c) => ({
       id: c.id,
@@ -392,12 +417,14 @@ async function listDirectory(masterPassword) {
       adminPassword: c.admin.password,
       createdAt: c.createdAt,
       accountStatus: accountStatusOf(c),
+      adminBoundPc: publicBoundPc(c.admin?.boundPc),
       staff: c.staff.map((s) => ({
         id: s.id,
         username: s.username,
         password: s.password,
         accountStatus: accountStatusOf(s),
         createdAt: s.createdAt,
+        boundPc: publicBoundPc(s.boundPc),
       })),
       license: findActiveLicense(db, 'company', c.id),
     })),
@@ -462,8 +489,7 @@ async function loginIndividual({ username, password, remember }) {
   )
   const found =
     matches.find((u) => sameLanScope(u.lanScope, lanScope)) ||
-    matches.find((u) => !u.lanScope) ||
-    matches[0]
+    matches.find((u) => !u.lanScope)
   if (!found) return { ok: false, error: 'Kullanıcı adı veya şifre hatalı.' }
 
   if (!found.lanScope) {
@@ -476,6 +502,13 @@ async function loginIndividual({ username, password, remember }) {
 
   const lic = assertLicense(db, 'individual', found.id)
   if (!lic.ok) return lic
+
+  const pcGate = assertAndBindPc(found)
+  if (!pcGate.ok) return pcGate
+  writeDb(db)
+  if (pcGate.bound || found.boundPc) {
+    await pushCentralAfter({ ok: true })
+  }
 
   currentSession = {
     type: 'individual',
@@ -560,6 +593,12 @@ async function loginCompanyAdmin({ companyName, username, password, remember }) 
   const bind = bindCompanyToMachine(company.id, company.name)
   if (!bind.ok) return bind
 
+  const pcGate = assertAndBindPc(company.admin)
+  if (!pcGate.ok) return pcGate
+  touchUpdated(company)
+  writeDb(db)
+  await pushCentralAfter({ ok: true })
+
   currentSession = {
     type: 'company',
     role: 'admin',
@@ -611,6 +650,12 @@ async function loginCompanyStaff({ companyName, username, password, remember }) 
 
   const bind = bindCompanyToMachine(company.id, company.name)
   if (!bind.ok) return bind
+
+  const pcGate = assertAndBindPc(staff)
+  if (!pcGate.ok) return pcGate
+  touchUpdated(company)
+  writeDb(db)
+  await pushCentralAfter({ ok: true })
 
   currentSession = {
     type: 'company',
@@ -697,6 +742,7 @@ async function setAccountStatus({
     const u = db.individuals.find((x) => x.id === targetId)
     if (!u) return { ok: false, error: 'Şahıs bulunamadı.' }
     u.accountStatus = status
+    touchUpdated(u)
     if (status === 'approved' && !findActiveLicense(db, 'individual', u.id)) {
       db.licenses.push(
         createLicense({
@@ -717,6 +763,7 @@ async function setAccountStatus({
     const c = db.companies.find((x) => x.id === targetId)
     if (!c) return { ok: false, error: 'Firma bulunamadı.' }
     c.accountStatus = status
+    touchUpdated(c)
     if (status === 'approved' && !findActiveLicense(db, 'company', c.id)) {
       db.licenses.push(
         createLicense({
@@ -740,6 +787,8 @@ async function setAccountStatus({
     const s = c.staff.find((x) => x.id === targetId)
     if (!s) return { ok: false, error: 'Personel bulunamadı.' }
     s.accountStatus = status
+    touchUpdated(s)
+    touchUpdated(c)
     writeDb(db)
     return pushCentralAfter({ ok: true, accountStatus: status })
   }
@@ -765,7 +814,7 @@ function listStaff() {
   }
 }
 
-function changeOwnPassword({ currentPassword, newPassword }) {
+async function changeOwnPassword({ currentPassword, newPassword }) {
   if (!currentSession) return { ok: false, error: 'Oturum yok.' }
   const pw = String(newPassword || '')
   if (pw.length < 4) return { ok: false, error: 'Yeni şifre en az 4 karakter olmalı.' }
@@ -778,8 +827,9 @@ function changeOwnPassword({ currentPassword, newPassword }) {
       return { ok: false, error: 'Mevcut şifre hatalı.' }
     }
     user.password = pw
+    touchUpdated(user)
     writeDb(db)
-    return { ok: true }
+    return pushCentralAfter({ ok: true })
   }
 
   if (currentSession.type === 'company' && currentSession.role === 'admin') {
@@ -788,8 +838,10 @@ function changeOwnPassword({ currentPassword, newPassword }) {
       return { ok: false, error: 'Mevcut şifre hatalı.' }
     }
     company.admin.password = pw
+    touchUpdated(company)
+    touchUpdated(company.admin)
     writeDb(db)
-    return { ok: true }
+    return pushCentralAfter({ ok: true })
   }
 
   if (currentSession.type === 'company' && currentSession.role === 'staff') {
@@ -799,14 +851,16 @@ function changeOwnPassword({ currentPassword, newPassword }) {
       return { ok: false, error: 'Mevcut şifre hatalı.' }
     }
     staff.password = pw
+    touchUpdated(staff)
+    touchUpdated(company)
     writeDb(db)
-    return { ok: true }
+    return pushCentralAfter({ ok: true })
   }
 
   return { ok: false, error: 'Şifre değiştirilemedi.' }
 }
 
-function updateIndividual({ masterPassword, id, username, password }) {
+async function updateIndividual({ masterPassword, id, username, password }) {
   const check = verifyMasterPassword(masterPassword)
   if (!check.ok) return check
   const userName = normalizeUser(username)
@@ -830,18 +884,20 @@ function updateIndividual({ masterPassword, id, username, password }) {
   user.username = userName
   user.password = pw
   if (!user.lanScope) user.lanScope = getLanScope()
+  touchUpdated(user)
 
   for (const lic of db.licenses) {
     if (lic.targetType === 'individual' && lic.targetId === id) {
       lic.targetLabel = userName
+      touchUpdated(lic)
     }
   }
 
   writeDb(db)
-  return { ok: true }
+  return pushCentralAfter({ ok: true })
 }
 
-function updateCompany({
+async function updateCompany({
   masterPassword,
   id,
   name,
@@ -878,10 +934,13 @@ function updateCompany({
   company.name = companyName
   company.admin.username = adminUser
   company.admin.password = adminPw
+  touchUpdated(company)
+  touchUpdated(company.admin)
 
   for (const lic of db.licenses) {
     if (lic.targetType === 'company' && lic.targetId === id) {
       lic.targetLabel = companyName
+      touchUpdated(lic)
     }
   }
 
@@ -892,10 +951,10 @@ function updateCompany({
   }
 
   writeDb(db)
-  return { ok: true }
+  return pushCentralAfter({ ok: true })
 }
 
-function updateStaffMember({
+async function updateStaffMember({
   masterPassword,
   companyId,
   staffId,
@@ -925,11 +984,13 @@ function updateStaffMember({
 
   staff.username = userName
   staff.password = pw
+  touchUpdated(staff)
+  touchUpdated(company)
   writeDb(db)
-  return { ok: true }
+  return pushCentralAfter({ ok: true })
 }
 
-function deleteIndividual({ masterPassword, id }) {
+async function deleteIndividual({ masterPassword, id }) {
   const check = verifyMasterPassword(masterPassword)
   if (!check.ok) return check
   if (!id) return { ok: false, error: 'Kullanıcı id gerekli.' }
@@ -953,10 +1014,10 @@ function deleteIndividual({ masterPassword, id }) {
     writeMachine(machine)
   }
 
-  return { ok: true }
+  return pushCentralReplace({ ok: true })
 }
 
-function deleteCompany({ masterPassword, id }) {
+async function deleteCompany({ masterPassword, id }) {
   const check = verifyMasterPassword(masterPassword)
   if (!check.ok) return check
   if (!id) return { ok: false, error: 'Firma id gerekli.' }
@@ -986,10 +1047,10 @@ function deleteCompany({ masterPassword, id }) {
   }
   writeMachine(machine)
 
-  return { ok: true }
+  return pushCentralReplace({ ok: true })
 }
 
-function deleteStaffMember({ masterPassword, companyId, staffId }) {
+async function deleteStaffMember({ masterPassword, companyId, staffId }) {
   const check = verifyMasterPassword(masterPassword)
   if (!check.ok) return check
   if (!companyId || !staffId) return { ok: false, error: 'Personel bilgisi eksik.' }
@@ -1001,6 +1062,7 @@ function deleteStaffMember({ masterPassword, companyId, staffId }) {
   if (idx < 0) return { ok: false, error: 'Personel bulunamadı.' }
   const removed = company.staff[idx]
   company.staff.splice(idx, 1)
+  touchUpdated(company)
   writeDb(db)
 
   const machine = readMachine()
@@ -1013,7 +1075,7 @@ function deleteStaffMember({ masterPassword, companyId, staffId }) {
     writeMachine(machine)
   }
 
-  return { ok: true }
+  return pushCentralReplace({ ok: true })
 }
 
 function ensureMachineFile() {
@@ -1023,6 +1085,140 @@ function ensureMachineFile() {
     writeMachine(m)
   }
   return m
+}
+
+/** Bu PC’ye özgü kimlik + yönetici panelinde görünen etiket */
+function getLocalPcInfo() {
+  const m = ensureMachineFile()
+  let hostname = 'PC'
+  let username = ''
+  try {
+    hostname = os.hostname() || 'PC'
+  } catch {
+    /* ignore */
+  }
+  try {
+    username = os.userInfo().username || ''
+  } catch {
+    /* ignore */
+  }
+  let lanIp = ''
+  try {
+    const nets = os.networkInterfaces()
+    for (const list of Object.values(nets || {})) {
+      for (const n of list || []) {
+        const family = n.family === 4 || n.family === 'IPv4'
+        if (!family || n.internal) continue
+        lanIp = String(n.address || '')
+        break
+      }
+      if (lanIp) break
+    }
+  } catch {
+    /* ignore */
+  }
+  const shortId = String(m.machineId).replace(/-/g, '').slice(0, 8).toUpperCase()
+  const labelParts = [hostname]
+  if (username) labelParts.push(username)
+  labelParts.push(`ID ${shortId}`)
+  return {
+    machineId: m.machineId,
+    hostname,
+    username,
+    lanIp,
+    label: labelParts.join(' · '),
+    lanScope: getLanScope(),
+  }
+}
+
+function publicBoundPc(bound) {
+  if (!bound?.machineId) return null
+  return {
+    machineId: bound.machineId,
+    hostname: bound.hostname || '',
+    username: bound.username || '',
+    lanIp: bound.lanIp || '',
+    label: bound.label || bound.hostname || bound.machineId,
+    boundAt: bound.boundAt || null,
+    lastLoginAt: bound.lastLoginAt || null,
+  }
+}
+
+function assertAndBindPc(entity) {
+  const pc = getLocalPcInfo()
+  const now = new Date().toISOString()
+  if (!entity.boundPc?.machineId) {
+    entity.boundPc = {
+      machineId: pc.machineId,
+      hostname: pc.hostname,
+      username: pc.username,
+      lanIp: pc.lanIp,
+      label: pc.label,
+      lanScope: pc.lanScope,
+      boundAt: now,
+      lastLoginAt: now,
+    }
+    touchUpdated(entity)
+    return { ok: true, bound: true, pc: publicBoundPc(entity.boundPc) }
+  }
+  if (entity.boundPc.machineId !== pc.machineId) {
+    const where = entity.boundPc.label || entity.boundPc.hostname || 'başka bir PC'
+    return {
+      ok: false,
+      error: `Bu hesap kayıtlı PC’ye kilitli (${where}). Başka bilgisayardan giriş için yönetici panelinden “PC bağlantısını kes” gerekir.`,
+    }
+  }
+  entity.boundPc.lastLoginAt = now
+  entity.boundPc.hostname = pc.hostname
+  entity.boundPc.username = pc.username
+  entity.boundPc.lanIp = pc.lanIp
+  entity.boundPc.label = pc.label
+  entity.boundPc.lanScope = pc.lanScope
+  touchUpdated(entity)
+  return { ok: true, bound: false, pc: publicBoundPc(entity.boundPc) }
+}
+
+/** Yönetici: hesabın PC kilidini kaldır — sonraki giriş yeni PC’ye bağlanır */
+async function unbindBoundPc({ masterPassword, targetType, targetId, companyId }) {
+  const check = verifyMasterPassword(masterPassword)
+  if (!check.ok) return check
+  if (!targetType || !targetId) return { ok: false, error: 'Hedef gerekli.' }
+
+  await pullCentralQuiet()
+  const db = readDb()
+
+  if (targetType === 'individual') {
+    const u = db.individuals.find((x) => x.id === targetId)
+    if (!u) return { ok: false, error: 'Şahıs bulunamadı.' }
+    delete u.boundPc
+    touchUpdated(u)
+    writeDb(db)
+    return pushCentralAfter({ ok: true })
+  }
+
+  if (targetType === 'company-admin') {
+    const c = db.companies.find((x) => x.id === targetId)
+    if (!c) return { ok: false, error: 'Firma bulunamadı.' }
+    if (c.admin) delete c.admin.boundPc
+    touchUpdated(c)
+    writeDb(db)
+    return pushCentralAfter({ ok: true })
+  }
+
+  if (targetType === 'staff') {
+    if (!companyId) return { ok: false, error: 'Firma id gerekli.' }
+    const c = db.companies.find((x) => x.id === companyId)
+    if (!c) return { ok: false, error: 'Firma bulunamadı.' }
+    const s = c.staff.find((x) => x.id === targetId)
+    if (!s) return { ok: false, error: 'Personel bulunamadı.' }
+    delete s.boundPc
+    touchUpdated(s)
+    touchUpdated(c)
+    writeDb(db)
+    return pushCentralAfter({ ok: true })
+  }
+
+  return { ok: false, error: 'Geçersiz hedef tipi.' }
 }
 
 module.exports = {
@@ -1053,6 +1249,7 @@ module.exports = {
   deleteCompany,
   deleteStaffMember,
   setAccountStatus,
+  unbindBoundPc,
   setCentralToken: central.setToken,
   getCentralStatus: central.getStatus,
   syncCentralNow: async () => {

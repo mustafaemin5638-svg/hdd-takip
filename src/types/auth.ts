@@ -41,6 +41,16 @@ export interface LicenseRecord {
   targetLabel?: string
 }
 
+export interface BoundPcInfo {
+  machineId: string
+  hostname: string
+  username?: string
+  lanIp?: string
+  label: string
+  boundAt?: string | null
+  lastLoginAt?: string | null
+}
+
 export interface AuthApi {
   getSession: () => Promise<AuthSession | null>
   logout: () => Promise<boolean>
@@ -62,6 +72,7 @@ export interface AuthApi {
       createdAt?: string
       accountStatus?: AccountStatus
       license?: LicenseRecord | null
+      boundPc?: BoundPcInfo | null
     }[]
     companies?: {
       id: string
@@ -70,11 +81,13 @@ export interface AuthApi {
       adminPassword: string
       createdAt?: string
       accountStatus?: AccountStatus
+      adminBoundPc?: BoundPcInfo | null
       staff: {
         id?: string
         username: string
         password: string
         accountStatus?: AccountStatus
+        boundPc?: BoundPcInfo | null
       }[]
       license?: LicenseRecord | null
     }[]
@@ -152,10 +165,22 @@ export interface AuthApi {
     companyId?: string
     status: AccountStatus
   }) => Promise<{ ok: boolean; error?: string; accountStatus?: AccountStatus }>
+  unbindBoundPc: (payload: {
+    masterPassword: string
+    targetType: 'individual' | 'company-admin' | 'staff'
+    targetId: string
+    companyId?: string
+  }) => Promise<{ ok: boolean; error?: string }>
   registerIndividual: (payload: {
     username: string
     password: string
-  }) => Promise<{ ok: boolean; error?: string; pending?: boolean; message?: string }>
+  }) => Promise<{
+    ok: boolean
+    error?: string
+    pending?: boolean
+    message?: string
+    syncWarning?: string
+  }>
   loginIndividual: (payload: {
     username: string
     password: string
@@ -171,6 +196,7 @@ export interface AuthApi {
     companyId?: string
     pending?: boolean
     message?: string
+    syncWarning?: string
   }>
   loginCompanyAdmin: (payload: {
     companyName: string

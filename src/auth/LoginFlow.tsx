@@ -73,10 +73,10 @@ export function LoginFlow({ onLoggedIn }: Props) {
     const reg = await api.registerIndividual({ username, password })
     if (!reg.ok) return setError(reg.error || 'Kayıt başarısız.')
     setError('')
-    setInfo(
+    const base =
       reg.message ||
-        'Kayıt alındı. Yönetici onayından sonra giriş yapabilirsin.',
-    )
+      'Kayıt alındı. Yönetici onayından sonra giriş yapabilirsin.'
+    setInfo(reg.syncWarning ? `${base} (${reg.syncWarning})` : base)
     setView('individual-login')
   }
 
@@ -87,10 +87,10 @@ export function LoginFlow({ onLoggedIn }: Props) {
     const reg = await api.registerCompanyAdmin({ companyName, username, password })
     if (!reg.ok) return setError(reg.error || 'Firma kaydı başarısız.')
     setError('')
-    setInfo(
+    const base =
       reg.message ||
-        'Firma kaydı alındı. Yönetici onayından sonra giriş yapabilirsin.',
-    )
+      'Firma kaydı alındı. Yönetici onayından sonra giriş yapabilirsin.'
+    setInfo(reg.syncWarning ? `${base} (${reg.syncWarning})` : base)
     setView('company-admin-login')
   }
 
@@ -242,12 +242,14 @@ export function LoginFlow({ onLoggedIn }: Props) {
             required
           />
         </div>
-        {rememberBox()}
+        {!isReg && rememberBox()}
         {isReg && (
-          <p className="hint">Kayıtta 7 gün deneme lisansı açılır (şahıs paketi).</p>
+          <p className="hint">
+            Kayıt yönetici onayına düşer. Onayda 7 gün deneme lisansı açılır.
+          </p>
         )}
         <button type="submit" className="btn primary login-submit">
-          {isReg ? 'Kayıt ol ve gir' : 'Giriş yap'}
+          {isReg ? 'Kayıt ol' : 'Giriş yap'}
         </button>
       </form>,
       <div className="auth-links">
@@ -292,9 +294,11 @@ export function LoginFlow({ onLoggedIn }: Props) {
             required
           />
         </div>
-        {rememberBox()}
+        {!isReg && rememberBox()}
         {isReg && (
-          <p className="hint">Kayıtta 7 gün deneme lisansı açılır (firma paketi).</p>
+          <p className="hint">
+            Kayıt yönetici onayına düşer. Onayda 7 gün deneme lisansı açılır.
+          </p>
         )}
         <button type="submit" className="btn primary login-submit">
           {isReg ? 'Firma hesabı oluştur' : 'Giriş yap'}
