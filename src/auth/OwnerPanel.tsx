@@ -595,10 +595,8 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                     </td>
                     <td>
                       {pc ? (
-                        <>
-                          <div className="mono" style={{ fontSize: '0.82rem' }}>
-                            {pc}
-                          </div>
+                        <div className="owner-pc-cell">
+                          <div className="mono">{pc}</div>
                           {u.boundPc?.lanIp ? (
                             <div className="muted">IP {u.boundPc.lanIp}</div>
                           ) : null}
@@ -611,13 +609,12 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                             <button
                               type="button"
                               className="btn small"
-                              style={{ marginTop: '0.35rem' }}
                               onClick={() => unbindPc('individual', u.id, u.username)}
                             >
                               PC bağlantısını kes
                             </button>
                           )}
-                        </>
+                        </div>
                       ) : (
                         <span className="muted">Henüz bağlanmadı</span>
                       )}
@@ -810,11 +807,9 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                       </td>
                       <td>
                         {adminPc ? (
-                          <>
+                          <div className="owner-pc-cell">
                             <div className="muted">Yetkili PC</div>
-                            <div className="mono" style={{ fontSize: '0.82rem' }}>
-                              {adminPc}
-                            </div>
+                            <div className="mono">{adminPc}</div>
                             {c.adminBoundPc?.lanIp ? (
                               <div className="muted">IP {c.adminBoundPc.lanIp}</div>
                             ) : null}
@@ -822,7 +817,6 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                               <button
                                 type="button"
                                 className="btn small"
-                                style={{ marginTop: '0.35rem' }}
                                 onClick={() =>
                                   unbindPc('company-admin', c.id, `${c.name} yetkili`)
                                 }
@@ -830,7 +824,7 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                                 PC bağlantısını kes
                               </button>
                             )}
-                          </>
+                          </div>
                         ) : (
                           <span className="muted">Yetkili: henüz bağlanmadı</span>
                         )}
@@ -951,24 +945,21 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                           </td>
                           <td>
                             {pcLabel(s.boundPc) ? (
-                              <>
-                                <div className="mono" style={{ fontSize: '0.82rem' }}>
-                                  {pcLabel(s.boundPc)}
-                                </div>
+                              <div className="owner-pc-cell">
+                                <div className="mono">{pcLabel(s.boundPc)}</div>
                                 {s.boundPc?.lanIp ? (
                                   <div className="muted">IP {s.boundPc.lanIp}</div>
                                 ) : null}
                                 <button
                                   type="button"
                                   className="btn small"
-                                  style={{ marginTop: '0.35rem' }}
                                   onClick={() =>
                                     unbindPc('staff', s.id, s.username, c.id)
                                   }
                                 >
                                   PC bağlantısını kes
                                 </button>
-                              </>
+                              </div>
                             ) : (
                               <span className="muted">Henüz bağlanmadı</span>
                             )}
@@ -1015,21 +1006,18 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                           </td>
                           <td>
                             {pcLabel(s.boundPc) ? (
-                              <>
-                                <div className="mono" style={{ fontSize: '0.82rem' }}>
-                                  {pcLabel(s.boundPc)}
-                                </div>
+                              <div className="owner-pc-cell">
+                                <div className="mono">{pcLabel(s.boundPc)}</div>
                                 <button
                                   type="button"
                                   className="btn small"
-                                  style={{ marginTop: '0.35rem' }}
                                   onClick={() =>
                                     unbindPc('staff', s.id, s.username, c.id)
                                   }
                                 >
                                   PC bağlantısını kes
                                 </button>
-                              </>
+                              </div>
                             ) : (
                               <span className="muted">Henüz bağlanmadı</span>
                             )}
