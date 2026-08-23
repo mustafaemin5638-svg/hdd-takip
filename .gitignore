@@ -15,6 +15,7 @@ release
 *.local
 .env
 .DS_Store
+electron/centralAuthToken.cjs
 
 # Editor directories and files
 .vscode/*

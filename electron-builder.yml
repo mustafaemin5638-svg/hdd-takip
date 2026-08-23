@@ -1,6 +1,6 @@
 appId: com.ozaydin.hddtakip
 productName: HDD TAKIP
-copyright: Copyright © Ozaydin
+copyright: Copyright © NEXTSOFTWARE
 directories:
   # Windows'ta Türkçe karakterli proje yolu sorun çıkarmasın diye ASCII çıktı klasörü
   output: C:/hdd-takip-release
@@ -11,6 +11,7 @@ files:
   - package.json
 asar: true
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch:
@@ -24,6 +25,11 @@ nsis:
   uninstallDisplayName: HDD TAKIP
   createDesktopShortcut: always
   createStartMenuShortcut: true
+  include: build/installer.nsh
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  differentialPackage: true
 publish:
   provider: github
   owner: mustafaemin5638-svg

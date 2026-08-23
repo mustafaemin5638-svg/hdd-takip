@@ -1,11 +1,33 @@
 import type { Hdd } from '../types/hdd'
-import { findBySerial } from '../storage/hddStore'
+import {
+  garantiBitisTarihi,
+  garantiMetin,
+  isGarantiAktif,
+  normalizeTur,
+  turLabel,
+} from '../types/hdd'
+import { findBySerial, findSaleBatch } from '../storage/hddStore'
 import { formatDate } from '../utils/date'
+import { GarantiIsik } from './GarantiIsik'
+import { SalePackageView } from './SalePackageView'
 import { useState, type FormEvent } from 'react'
+
+function garantiDetay(disk: Hdd): string {
+  const base = garantiMetin(disk)
+  if (disk.durum !== 'satildi' || !disk.garantiAy || disk.garantiAy <= 0) {
+    return base
+  }
+  if (isGarantiAktif(disk)) {
+    const end = garantiBitisTarihi(disk.satisTarihi, disk.garantiAy)
+    return `${base} · bitiş ${formatDate(end?.toISOString())}`
+  }
+  return `${base} · süresi dolmuş`
+}
 
 export function QueryPanel() {
   const [serialNumber, setSerialNumber] = useState('')
   const [result, setResult] = useState<Hdd | null | undefined>(undefined)
+  const [batch, setBatch] = useState<Hdd[]>([])
   const [searched, setSearched] = useState('')
 
   function handleSubmit(e: FormEvent) {
@@ -14,14 +36,17 @@ export function QueryPanel() {
     setSearched(sn.toUpperCase())
     if (!sn) {
       setResult(undefined)
+      setBatch([])
       return
     }
-    setResult(findBySerial(sn) ?? null)
+    const found = findBySerial(sn) ?? null
+    setResult(found)
+    setBatch(found && found.durum === 'satildi' ? findSaleBatch(found) : found ? [found] : [])
   }
 
   return (
     <div className="query-wrap">
-      <form className="panel-form query-form" onSubmit={handleSubmit}>
+      <form className="panel-form" onSubmit={handleSubmit}>
         <div className="field">
           <label htmlFor="sorgu-sn">S/N Sorgula</label>
           <div className="inline-actions">
@@ -49,7 +74,7 @@ export function QueryPanel() {
       )}
 
       {result && (
-        <div className="result card-result">
+        <div className="result">
           <div className="result-head">
             <h3 className="mono">{result.serialNumber}</h3>
             <span className={`badge ${result.durum}`}>
@@ -58,6 +83,23 @@ export function QueryPanel() {
           </div>
 
           <dl className="detail-grid">
+            <div>
+              <dt>Tür</dt>
+              <dd>{turLabel(normalizeTur(result.tur))}</dd>
+            </div>
+            <div>
+              <dt>Garanti</dt>
+              <dd>
+                <span className="garanti-cell">
+                  <GarantiIsik disk={result} />
+                  <span>{garantiDetay(result)}</span>
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>Distribütör</dt>
+              <dd>{result.distributor || '—'}</dd>
+            </div>
             <div>
               <dt>Boyut</dt>
               <dd>{result.boyut}</dd>
@@ -78,6 +120,12 @@ export function QueryPanel() {
               <dt>Kime verildi</dt>
               <dd>{result.satilanKisi || '—'}</dd>
             </div>
+            {result.satanDisplayName && (
+              <div className="span-2">
+                <dt>İşlemi yapan</dt>
+                <dd>{result.satanDisplayName}</dd>
+              </div>
+            )}
             {result.notlar && (
               <div className="span-2">
                 <dt>Not</dt>
@@ -85,6 +133,10 @@ export function QueryPanel() {
               </div>
             )}
           </dl>
+
+          {result.durum === 'satildi' && (
+            <SalePackageView diskler={batch.length ? batch : [result]} />
+          )}
         </div>
       )}
     </div>

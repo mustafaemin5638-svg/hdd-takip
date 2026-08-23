@@ -13,14 +13,6 @@ export function formatDate(iso?: string): string {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`
 }
 
-/** Görüntü: GG/AA/YYYY SS:DD */
-export function formatDateTime(iso?: string): string {
-  if (!iso) return '—'
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return '—'
-  return `${formatDate(iso)} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
 /** Form input için GG/AA/YYYY (PC saati) */
 export function toDayMonthYear(date: Date = nowFromPc()): string {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`

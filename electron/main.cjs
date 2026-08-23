@@ -1,8 +1,42 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const path = require('path')
+const fs = require('fs')
+const crypto = require('crypto')
 const { autoUpdater } = require('electron-updater')
+const auth = require('./authStore.cjs')
 
 const isDev = !app.isPackaged
+const wantsOwnerMode =
+  process.argv.includes('--owner') || process.env.HDD_OWNER_PANEL === '1'
+
+/** Tek seferlik aktivasyon kodu özeti — müşteri kurulumlarında panel açılmaz */
+const OWNER_UNLOCK_HASH =
+  'a9fd7c0509a45f948e783074c7ab9c3e85028d6df9d9d87b1b4df70ca006336e'
+
+function ownerUnlockPath() {
+  return path.join(app.getPath('userData'), 'owner-panel.enabled')
+}
+
+function isOwnerPanelAllowed() {
+  if (isDev) return true
+  if (process.env.HDD_OWNER_PANEL === '1') return true
+  try {
+    return fs.existsSync(ownerUnlockPath())
+  } catch {
+    return false
+  }
+}
+
+function writeOwnerUnlock() {
+  fs.writeFileSync(
+    ownerUnlockPath(),
+    JSON.stringify({ enabledAt: new Date().toISOString() }, null, 2),
+    'utf8',
+  )
+}
+
+/** Pencere / hash için: --owner isteği var mı (kilit ekranı dahil) */
+const isOwnerMode = wantsOwnerMode
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null
@@ -13,13 +47,44 @@ function sendToRenderer(channel, payload) {
   }
 }
 
+function denyUnlessOwner() {
+  if (isOwnerPanelAllowed()) return null
+  return { ok: false, error: 'Yönetici paneli bu kurulumda etkin değil.' }
+}
+
+/** Setup ile kurulum kontrolü — taşınabilir kopyayı engellemeye çalışır */
+function checkInstallGuard() {
+  if (isDev) return { ok: true, mode: 'dev' }
+  // Yönetici paneli de kurulu Setup üzerinden çalışır
+  const exe = app.getPath('exe').toLowerCase()
+  const local = (process.env.LOCALAPPDATA || '').toLowerCase()
+  const pf = (process.env.ProgramFiles || '').toLowerCase()
+  const pf86 = (process.env['ProgramFiles(x86)'] || '').toLowerCase()
+
+  const allowedRoots = [local, pf, pf86].filter(Boolean)
+  const inAllowed = allowedRoots.some((root) => root && exe.startsWith(root))
+  const looksInstalled = /hdd.?takip|programs\\/.test(exe)
+
+  if (!inAllowed && !looksInstalled) {
+    return {
+      ok: false,
+      error:
+        'HDD TAKİP yalnızca kurulum (Setup) dosyası ile çalışır. Klasörü kopyalayarak kullanamazsın. Lütfen Setup ile kur.',
+    }
+  }
+  return { ok: true, mode: 'installed' }
+}
+
 function createWindow() {
+  const iconPath = path.join(__dirname, '../build/icon.ico')
   mainWindow = new BrowserWindow({
-    width: 1180,
-    height: 800,
-    minWidth: 900,
+    width: isOwnerMode ? 1280 : 1180,
+    height: isOwnerMode ? 860 : 800,
+    minWidth: isOwnerMode ? 980 : 900,
     minHeight: 640,
-    title: 'HDD TAKİP',
+    title: isOwnerMode ? 'HDD TAKİP Yönetici Paneli' : 'HDD TAKİP',
+    icon: iconPath,
+    show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -28,11 +93,22 @@ function createWindow() {
     },
   })
 
+  mainWindow.once('ready-to-show', () => {
+    mainWindow?.show()
+  })
+
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')
-    mainWindow.webContents.openDevTools({ mode: 'detach' })
+    const url = isOwnerMode
+      ? 'http://localhost:5173/#owner'
+      : 'http://localhost:5173/'
+    mainWindow.loadURL(url)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    const indexHtml = path.join(__dirname, '..', 'dist', 'index.html')
+    if (isOwnerMode) {
+      mainWindow.loadFile(indexHtml, { hash: 'owner' })
+    } else {
+      mainWindow.loadFile(indexHtml)
+    }
   }
 
   mainWindow.on('closed', () => {
@@ -41,19 +117,68 @@ function createWindow() {
 }
 
 function setupAutoUpdater() {
-  if (isDev) return
+  if (isDev) {
+    // Geliştirmede de IPC kalsın — UI “handler yok” hatası vermesin
+    ipcMain.handle('updater:check', async () => {
+      const current = app.getVersion()
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return { available: false, version: null, current }
+    })
+    ipcMain.handle('updater:download', async () => {
+      throw new Error('Geliştirme modunda güncelleme yok.')
+    })
+    ipcMain.handle('updater:install', async () => {
+      throw new Error('Geliştirme modunda güncelleme yok.')
+    })
+    return
+  }
 
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = true
+  // Hataları yutma — banner'da görünsün
+  autoUpdater.logger = {
+    info: (...args) => console.log('[updater]', ...args),
+    warn: (...args) => console.warn('[updater]', ...args),
+    error: (...args) => console.error('[updater]', ...args),
+    debug: (...args) => console.log('[updater:debug]', ...args),
+  }
+
+  /** "2.2.2" > "2.2.1" — eşit veya düşükse false */
+  function isNewerVersion(remote, current) {
+    const parse = (v) =>
+      String(v || '')
+        .replace(/^v/i, '')
+        .split(/[.-]/)
+        .map((p) => {
+          const n = parseInt(p, 10)
+          return Number.isFinite(n) ? n : 0
+        })
+    const a = parse(remote)
+    const b = parse(current)
+    const len = Math.max(a.length, b.length)
+    for (let i = 0; i < len; i += 1) {
+      const x = a[i] || 0
+      const y = b[i] || 0
+      if (x > y) return true
+      if (x < y) return false
+    }
+    return false
+  }
 
   autoUpdater.on('checking-for-update', () => {
     sendToRenderer('updater:status', { status: 'checking' })
   })
 
   autoUpdater.on('update-available', (info) => {
+    const current = app.getVersion()
+    const remote = info?.version
+    if (!isNewerVersion(remote, current)) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return
+    }
     sendToRenderer('updater:status', {
       status: 'available',
-      version: info.version,
+      version: remote,
       releaseNotes: info.releaseNotes ?? null,
     })
   })
@@ -72,15 +197,20 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('update-downloaded', (info) => {
+    const current = app.getVersion()
+    const remote = info?.version
+    if (!isNewerVersion(remote, current)) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return
+    }
     sendToRenderer('updater:status', {
       status: 'downloaded',
-      version: info.version,
+      version: remote,
     })
   })
 
   autoUpdater.on('error', (err) => {
     const raw = err?.message || String(err)
-    // İlk kurulum / repo yokken 404 gürültüsünü kullanıcıya ham gösterme
     const friendly = /404|CHANGE_ME|releases\.atom/i.test(raw)
       ? 'Güncelleme sunucusuna ulaşılamadı. İnternet veya GitHub Release ayarını kontrol et.'
       : raw
@@ -91,23 +221,54 @@ function setupAutoUpdater() {
   })
 
   ipcMain.handle('updater:check', async () => {
-    const result = await autoUpdater.checkForUpdates()
-    return result?.updateInfo?.version ?? null
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      const remote = result?.updateInfo?.version ?? null
+      const current = app.getVersion()
+      if (!remote || !isNewerVersion(remote, current)) {
+        sendToRenderer('updater:status', { status: 'not-available' })
+        return { available: false, version: null, current }
+      }
+      sendToRenderer('updater:status', {
+        status: 'available',
+        version: remote,
+      })
+      return { available: true, version: remote, current }
+    } catch (err) {
+      const raw = err?.message || String(err)
+      sendToRenderer('updater:status', { status: 'error', message: raw })
+      throw err
+    }
   })
 
   ipcMain.handle('updater:download', async () => {
+    const pending = autoUpdater.updateInfo?.version
+    if (!pending || !isNewerVersion(pending, app.getVersion())) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      throw new Error('Mevcut güncelleme yok.')
+    }
     await autoUpdater.downloadUpdate()
     return true
   })
 
   ipcMain.handle('updater:install', () => {
-    autoUpdater.quitAndInstall(false, true)
+    const pending = autoUpdater.updateInfo?.version
+    if (!pending || !isNewerVersion(pending, app.getVersion())) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      throw new Error('Mevcut güncelleme yok.')
+    }
+    // Sessiz kurulum: NSIS "Yükleniyor" penceresini gösterme
+    autoUpdater.quitAndInstall(true, true)
     return true
   })
 
-  // Açılışta ve sonra periyodik kontrol
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
+    autoUpdater.checkForUpdates().catch((err) => {
+      sendToRenderer('updater:status', {
+        status: 'error',
+        message: err?.message || String(err),
+      })
+    })
   }, 2500)
 
   setInterval(
@@ -118,9 +279,254 @@ function setupAutoUpdater() {
   )
 }
 
-ipcMain.handle('app:getVersion', () => app.getVersion())
+function setupAuthIpc() {
+  ipcMain.handle('app:getVersion', () => app.getVersion())
+  ipcMain.handle('app:installGuard', () => checkInstallGuard())
+  ipcMain.handle('app:quit', () => {
+    app.quit()
+    return true
+  })
+  ipcMain.handle('app:savePdf', async (_e, payload) => {
+    try {
+      const html = String(payload?.html || '')
+      const defaultFileName = String(payload?.defaultFileName || 'HDD-Satis.pdf')
+      if (!html.trim()) return { ok: false, error: 'PDF içeriği boş.' }
+
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        title: 'Satış belgesini kaydet',
+        defaultPath: path.join(app.getPath('documents'), defaultFileName),
+        filters: [{ name: 'PDF', extensions: ['pdf'] }],
+      })
+      if (canceled || !filePath) return { ok: false, canceled: true }
+
+      const pdfWin = new BrowserWindow({
+        show: false,
+        width: 800,
+        height: 1100,
+        webPreferences: {
+          sandbox: true,
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      })
+      try {
+        await pdfWin.loadURL(
+          `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+        )
+        await new Promise((r) => setTimeout(r, 120))
+        const buffer = await pdfWin.webContents.printToPDF({
+          printBackground: true,
+          pageSize: 'A4',
+          margins: { marginType: 'default' },
+        })
+        fs.writeFileSync(filePath, buffer)
+        return { ok: true, path: filePath }
+      } finally {
+        if (!pdfWin.isDestroyed()) pdfWin.destroy()
+      }
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) }
+    }
+  })
+  ipcMain.handle('app:createOwnerDesktopShortcut', async () => {
+    const denied = denyUnlessOwner()
+    if (denied) return denied
+    try {
+      const os = require('os')
+      const { execFileSync } = require('child_process')
+      const projectRoot = path.join(__dirname, '..')
+      const home = os.homedir()
+
+      // OneDrive kullanma — sadece klasik Masaüstü
+      const desktop = path.join(home, 'Desktop')
+      fs.mkdirSync(desktop, { recursive: true })
+      writeOwnerUnlock()
+
+      if (isDev) {
+        // Türkçe klasör yolu .lnk içinde bozuluyor → 8.3 kısa yol kullan
+        const vbsPath = path.join(projectRoot, 'scripts', 'start-owner.vbs')
+        const shortcutPath = path.join(desktop, 'HDD TAKIP Yonetici.lnk')
+        const wscript = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'wscript.exe')
+
+        for (const junk of [
+          path.join(desktop, 'HDD TAKIP Yonetici.bat'),
+          path.join(desktop, 'HDD TAKIP Yonetici.vbs'),
+          path.join(desktop, 'HDD TAKIP Yonetici.cmd'),
+        ]) {
+          try {
+            if (fs.existsSync(junk)) fs.unlinkSync(junk)
+          } catch {
+            /* ignore */
+          }
+        }
+
+        const ps = `
+$ErrorActionPreference = 'Stop'
+$fso = New-Object -ComObject Scripting.FileSystemObject
+$projectRoot = ${JSON.stringify(projectRoot)}
+$vbsPath = ${JSON.stringify(vbsPath)}
+$shortcutPath = ${JSON.stringify(shortcutPath)}
+$wscript = ${JSON.stringify(wscript)}
+$rootShort = $fso.GetFolder($projectRoot).ShortPath
+$vbsShort = $fso.GetFile($vbsPath).ShortPath
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut($shortcutPath)
+$Shortcut.TargetPath = $wscript
+$Shortcut.Arguments = "//B $vbsShort"
+$Shortcut.WorkingDirectory = $rootShort
+$Shortcut.WindowStyle = 7
+$Shortcut.Description = 'NEXTSOFTWARE HDD TAKIP Yonetici Paneli'
+$Shortcut.Save()
+Write-Output $shortcutPath
+`
+        const psFile = path.join(os.tmpdir(), 'hdd-owner-shortcut-dev.ps1')
+        fs.writeFileSync(psFile, `\uFEFF${ps}`, 'utf8')
+        const out = execFileSync(
+          'powershell.exe',
+          ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psFile],
+          { windowsHide: true, encoding: 'utf8' },
+        )
+        return { ok: true, path: String(out).trim() || shortcutPath }
+      }
+
+      const shortcutPath = path.join(desktop, 'HDD TAKIP Yonetici.lnk')
+      const targetPath = app.getPath('exe')
+      const workDir = path.dirname(targetPath)
+
+      const ps = `
+$shortcutPath = ${JSON.stringify(shortcutPath)}
+$WshShell = New-Object -ComObject WScript.Shell
+$Shortcut = $WshShell.CreateShortcut($shortcutPath)
+$Shortcut.TargetPath = ${JSON.stringify(targetPath)}
+$Shortcut.Arguments = '--owner'
+$Shortcut.WorkingDirectory = ${JSON.stringify(workDir)}
+$Shortcut.WindowStyle = 1
+$Shortcut.Description = 'NEXTSOFTWARE HDD TAKIP Yonetici Paneli'
+$Shortcut.Save()
+Write-Output $shortcutPath
+`
+      const psFile = path.join(os.tmpdir(), 'hdd-owner-shortcut.ps1')
+      fs.writeFileSync(psFile, `\uFEFF${ps}`, 'utf8')
+      const out = execFileSync(
+        'powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', psFile],
+        { windowsHide: true, encoding: 'utf8' },
+      )
+      return { ok: true, path: String(out).trim() || shortcutPath }
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) }
+    }
+  })
+
+  ipcMain.handle('app:getOwnerAccess', () => ({
+    allowed: isOwnerPanelAllowed(),
+    wantsOwner: wantsOwnerMode,
+  }))
+
+  ipcMain.handle('app:enableOwnerPanel', (_e, code) => {
+    const raw = String(code || '').trim()
+    if (!raw) return { ok: false, error: 'Aktivasyon kodu gerekli.' }
+    const hash = crypto.createHash('sha256').update(raw).digest('hex')
+    if (hash !== OWNER_UNLOCK_HASH) {
+      return { ok: false, error: 'Aktivasyon kodu hatalı.' }
+    }
+    try {
+      writeOwnerUnlock()
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err?.message || String(err) }
+    }
+  })
+
+  const ownerOnly = (handler) => (_e, ...args) => {
+    const denied = denyUnlessOwner()
+    if (denied) return denied
+    return handler(...args)
+  }
+
+  ipcMain.handle('auth:getSession', () => auth.getSession())
+  ipcMain.handle('auth:logout', () => auth.logout())
+  ipcMain.handle('auth:getRemembered', () => auth.getRemembered())
+  ipcMain.handle('auth:getMachineBinding', () => auth.getMachineBinding())
+  ipcMain.handle(
+    'auth:hasMasterPassword',
+    ownerOnly(() => auth.hasMasterPassword()),
+  )
+  ipcMain.handle(
+    'auth:setMasterPassword',
+    ownerOnly((password) => auth.setMasterPassword(password)),
+  )
+  ipcMain.handle(
+    'auth:listCredentials',
+    ownerOnly((masterPassword) => auth.listDirectory(masterPassword)),
+  )
+  ipcMain.handle(
+    'auth:grantLicense',
+    ownerOnly((payload) => auth.grantOrExtendLicense(payload)),
+  )
+  ipcMain.handle(
+    'auth:setLicenseStatus',
+    ownerOnly((payload) => auth.setLicenseStatus(payload)),
+  )
+  ipcMain.handle(
+    'auth:setRemoteLicenseUrl',
+    ownerOnly((payload) => auth.setRemoteLicenseUrl(payload)),
+  )
+  ipcMain.handle(
+    'auth:getRemoteLicenseUrl',
+    ownerOnly((masterPassword) => auth.getRemoteLicenseUrl(masterPassword)),
+  )
+  ipcMain.handle(
+    'auth:updateIndividual',
+    ownerOnly((payload) => auth.updateIndividual(payload)),
+  )
+  ipcMain.handle(
+    'auth:updateCompany',
+    ownerOnly((payload) => auth.updateCompany(payload)),
+  )
+  ipcMain.handle(
+    'auth:updateStaffMember',
+    ownerOnly((payload) => auth.updateStaffMember(payload)),
+  )
+  ipcMain.handle(
+    'auth:deleteIndividual',
+    ownerOnly((payload) => auth.deleteIndividual(payload)),
+  )
+  ipcMain.handle(
+    'auth:deleteCompany',
+    ownerOnly((payload) => auth.deleteCompany(payload)),
+  )
+  ipcMain.handle(
+    'auth:deleteStaffMember',
+    ownerOnly((payload) => auth.deleteStaffMember(payload)),
+  )
+  ipcMain.handle(
+    'auth:setAccountStatus',
+    ownerOnly((payload) => auth.setAccountStatus(payload)),
+  )
+  ipcMain.handle(
+    'auth:unbindBoundPc',
+    ownerOnly((payload) => auth.unbindBoundPc(payload)),
+  )
+  ipcMain.handle(
+    'auth:setCentralToken',
+    ownerOnly((token) => auth.setCentralToken(token)),
+  )
+  ipcMain.handle('auth:getCentralStatus', ownerOnly(() => auth.getCentralStatus()))
+  ipcMain.handle('auth:syncCentralNow', ownerOnly(() => auth.syncCentralNow()))
+  ipcMain.handle('auth:registerIndividual', (_e, payload) => auth.registerIndividual(payload))
+  ipcMain.handle('auth:loginIndividual', (_e, payload) => auth.loginIndividual(payload))
+  ipcMain.handle('auth:registerCompanyAdmin', (_e, payload) => auth.registerCompanyAdmin(payload))
+  ipcMain.handle('auth:loginCompanyAdmin', (_e, payload) => auth.loginCompanyAdmin(payload))
+  ipcMain.handle('auth:loginCompanyStaff', (_e, payload) => auth.loginCompanyStaff(payload))
+  ipcMain.handle('auth:addStaff', (_e, payload) => auth.addStaff(payload))
+  ipcMain.handle('auth:listStaff', () => auth.listStaff())
+  ipcMain.handle('auth:changeOwnPassword', (_e, payload) => auth.changeOwnPassword(payload))
+}
 
 app.whenReady().then(() => {
+  auth.ensureMachineFile()
+  setupAuthIpc()
   createWindow()
   setupAutoUpdater()
 
