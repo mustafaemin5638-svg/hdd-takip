@@ -1199,10 +1199,10 @@ function assertAndBindPc(entity) {
     return { ok: true, bound: true, pc: publicBoundPc(entity.boundPc) }
   }
   if (!samePc(entity.boundPc, pc)) {
-    const where = entity.boundPc.label || entity.boundPc.hostname || entity.boundPc.mac || 'başka bir PC'
     return {
       ok: false,
-      error: `Bu hesap kayıtlı PC’ye kilitli (${where}). Başka bilgisayardan giriş için yönetici panelinden “PC bağlantısını kes” gerekir.`,
+      error:
+        'Bu hesap farklı bir PC’ye tanımlı. Başka bilgisayardan giriş için yönetici panelinden “PC bağlantısını kes” gerekir.',
     }
   }
   entity.boundPc.lastLoginAt = now
