@@ -597,8 +597,8 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                       {pc ? (
                         <div className="owner-pc-cell">
                           <div className="mono">{pc}</div>
-                          {u.boundPc?.lanIp ? (
-                            <div className="muted">IP {u.boundPc.lanIp}</div>
+                          {u.boundPc?.mac ? (
+                            <div className="muted">MAC {u.boundPc.mac.toUpperCase()}</div>
                           ) : null}
                           {u.boundPc?.lastLoginAt ? (
                             <div className="muted">
@@ -810,8 +810,8 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                           <div className="owner-pc-cell">
                             <div className="muted">Yetkili PC</div>
                             <div className="mono">{adminPc}</div>
-                            {c.adminBoundPc?.lanIp ? (
-                              <div className="muted">IP {c.adminBoundPc.lanIp}</div>
+                            {c.adminBoundPc?.mac ? (
+                              <div className="muted">MAC {c.adminBoundPc.mac.toUpperCase()}</div>
                             ) : null}
                             {!editing && (
                               <button
@@ -947,8 +947,8 @@ export function OwnerPanel({ onBack, onUnlockedChange }: Props) {
                             {pcLabel(s.boundPc) ? (
                               <div className="owner-pc-cell">
                                 <div className="mono">{pcLabel(s.boundPc)}</div>
-                                {s.boundPc?.lanIp ? (
-                                  <div className="muted">IP {s.boundPc.lanIp}</div>
+                                {s.boundPc?.mac ? (
+                                  <div className="muted">MAC {s.boundPc.mac.toUpperCase()}</div>
                                 ) : null}
                                 <button
                                   type="button"

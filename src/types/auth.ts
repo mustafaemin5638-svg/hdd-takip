@@ -43,9 +43,9 @@ export interface LicenseRecord {
 
 export interface BoundPcInfo {
   machineId: string
+  mac?: string
   hostname: string
   username?: string
-  lanIp?: string
   label: string
   boundAt?: string | null
   lastLoginAt?: string | null

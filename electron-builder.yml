@@ -21,6 +21,8 @@ nsis:
   oneClick: true
   perMachine: false
   allowToChangeInstallationDirectory: false
+  # Kaldırma / yeniden kurulumda kullanıcı verisi (HDD kayıtları, hesaplar) silinmez
+  deleteAppDataOnUninstall: false
   shortcutName: HDD TAKIP
   uninstallDisplayName: HDD TAKIP
   createDesktopShortcut: always

@@ -1087,7 +1087,35 @@ function ensureMachineFile() {
   return m
 }
 
-/** Bu PC’ye özgü kimlik + yönetici panelinde görünen etiket */
+/** Aktif (internal olmayan) ağ kartlarının MAC adresleri */
+function collectMacAddresses() {
+  const macs = new Set()
+  try {
+    const nets = os.networkInterfaces()
+    for (const list of Object.values(nets || {})) {
+      for (const n of list || []) {
+        if (n.internal) continue
+        const mac = String(n.mac || '')
+          .toLowerCase()
+          .replace(/-/g, ':')
+        if (!mac || mac === '00:00:00:00:00:00') continue
+        macs.add(mac)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return [...macs].sort()
+}
+
+function normalizeMac(mac) {
+  return String(mac || '')
+    .toLowerCase()
+    .replace(/-/g, ':')
+    .trim()
+}
+
+/** Bu PC’ye özgü kimlik (MAC) + yönetici panelinde görünen etiket */
 function getLocalPcInfo() {
   const m = ensureMachineFile()
   let hostname = 'PC'
@@ -1102,57 +1130,66 @@ function getLocalPcInfo() {
   } catch {
     /* ignore */
   }
-  let lanIp = ''
-  try {
-    const nets = os.networkInterfaces()
-    for (const list of Object.values(nets || {})) {
-      for (const n of list || []) {
-        const family = n.family === 4 || n.family === 'IPv4'
-        if (!family || n.internal) continue
-        lanIp = String(n.address || '')
-        break
-      }
-      if (lanIp) break
-    }
-  } catch {
-    /* ignore */
+  const macs = collectMacAddresses()
+  const mac = macs[0] || ''
+  if (mac && m.mac !== mac) {
+    m.mac = mac
+    m.macs = macs
+    writeMachine(m)
   }
-  const shortId = String(m.machineId).replace(/-/g, '').slice(0, 8).toUpperCase()
+  const macShort = mac ? mac.toUpperCase() : String(m.machineId).replace(/-/g, '').slice(0, 8).toUpperCase()
   const labelParts = [hostname]
   if (username) labelParts.push(username)
-  labelParts.push(`ID ${shortId}`)
+  labelParts.push(mac ? `MAC ${macShort}` : `ID ${macShort}`)
   return {
     machineId: m.machineId,
+    mac,
+    macs,
     hostname,
     username,
-    lanIp,
     label: labelParts.join(' · '),
     lanScope: getLanScope(),
   }
 }
 
 function publicBoundPc(bound) {
-  if (!bound?.machineId) return null
+  if (!bound?.mac && !bound?.machineId) return null
   return {
-    machineId: bound.machineId,
+    machineId: bound.machineId || '',
+    mac: bound.mac || '',
     hostname: bound.hostname || '',
     username: bound.username || '',
-    lanIp: bound.lanIp || '',
-    label: bound.label || bound.hostname || bound.machineId,
+    label: bound.label || bound.hostname || bound.mac || bound.machineId,
     boundAt: bound.boundAt || null,
     lastLoginAt: bound.lastLoginAt || null,
   }
 }
 
+function samePc(bound, pc) {
+  const boundMac = normalizeMac(bound?.mac)
+  const localMacs = (pc.macs || []).map(normalizeMac).filter(Boolean)
+  if (boundMac && localMacs.length) {
+    return localMacs.includes(boundMac)
+  }
+  // Eski kayıt (MAC yok): UUID ile geçici eşleşme, sonra MAC yazılır
+  if (bound?.machineId && pc.machineId && bound.machineId === pc.machineId) {
+    return true
+  }
+  return false
+}
+
 function assertAndBindPc(entity) {
   const pc = getLocalPcInfo()
   const now = new Date().toISOString()
-  if (!entity.boundPc?.machineId) {
+  if (!entity.boundPc?.mac && !entity.boundPc?.machineId) {
+    if (!pc.mac && !pc.machineId) {
+      return { ok: false, error: 'Bu PC’nin ağ kimliği okunamadı. Ağ bağlandıktan sonra tekrar dene.' }
+    }
     entity.boundPc = {
       machineId: pc.machineId,
+      mac: pc.mac,
       hostname: pc.hostname,
       username: pc.username,
-      lanIp: pc.lanIp,
       label: pc.label,
       lanScope: pc.lanScope,
       boundAt: now,
@@ -1161,8 +1198,8 @@ function assertAndBindPc(entity) {
     touchUpdated(entity)
     return { ok: true, bound: true, pc: publicBoundPc(entity.boundPc) }
   }
-  if (entity.boundPc.machineId !== pc.machineId) {
-    const where = entity.boundPc.label || entity.boundPc.hostname || 'başka bir PC'
+  if (!samePc(entity.boundPc, pc)) {
+    const where = entity.boundPc.label || entity.boundPc.hostname || entity.boundPc.mac || 'başka bir PC'
     return {
       ok: false,
       error: `Bu hesap kayıtlı PC’ye kilitli (${where}). Başka bilgisayardan giriş için yönetici panelinden “PC bağlantısını kes” gerekir.`,
@@ -1171,9 +1208,12 @@ function assertAndBindPc(entity) {
   entity.boundPc.lastLoginAt = now
   entity.boundPc.hostname = pc.hostname
   entity.boundPc.username = pc.username
-  entity.boundPc.lanIp = pc.lanIp
   entity.boundPc.label = pc.label
   entity.boundPc.lanScope = pc.lanScope
+  entity.boundPc.machineId = pc.machineId
+  // Eski UUID kayıtlarını MAC’e yükselt
+  if (pc.mac) entity.boundPc.mac = pc.mac
+  delete entity.boundPc.lanIp
   touchUpdated(entity)
   return { ok: true, bound: false, pc: publicBoundPc(entity.boundPc) }
 }
