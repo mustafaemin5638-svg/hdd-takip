@@ -24,8 +24,8 @@ export interface HddTakipApi {
     version: string | null
     current: string
   }>
-  downloadUpdate: () => Promise<boolean>
-  installUpdate: () => Promise<boolean>
+  downloadUpdate: () => Promise<boolean | { ok: boolean; error?: string }>
+  installUpdate: () => Promise<boolean | { ok: boolean; error?: string }>
   onUpdaterStatus: (callback: (payload: UpdaterStatus) => void) => () => void
   auth: AuthApi
 }

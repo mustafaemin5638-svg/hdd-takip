@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react'
 import type { UpdaterStatus } from '../types/electron'
 
+function friendlyUpdateError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || '')
+  if (/mevcut güncelleme yok/i.test(raw)) return 'Mevcut güncelleme yok.'
+  const m = raw.match(/Error: (.+)$/i)
+  if (m?.[1]) return m[1].trim()
+  if (/invoking remote method/i.test(raw)) {
+    return 'Güncelleme işlemi başarısız. Tekrar dene.'
+  }
+  return raw || 'Güncelleme hatası.'
+}
+
 /** Giriş ekranı sol alt — oturum açmadan güncelleme */
 export function LoginUpdateBar() {
   const [version, setVersion] = useState('')
@@ -36,7 +47,7 @@ export function LoginUpdateBar() {
         setHint(`v${payload.version} indirildi — kuruluma hazır.`)
         setBusy(false)
       } else if (payload.status === 'error') {
-        setHint(payload.message || 'Güncelleme hatası.')
+        setHint(friendlyUpdateError(payload.message))
         setBusy(false)
       }
     })
@@ -66,11 +77,9 @@ export function LoginUpdateBar() {
         )
       }
     } catch (err) {
-      setStatus({
-        status: 'error',
-        message: err instanceof Error ? err.message : 'Kontrol başarısız.',
-      })
-      setHint(err instanceof Error ? err.message : 'Kontrol başarısız.')
+      const msg = friendlyUpdateError(err)
+      setStatus({ status: 'error', message: msg })
+      setHint(msg)
     } finally {
       setBusy(false)
     }
@@ -81,13 +90,28 @@ export function LoginUpdateBar() {
     setBusy(true)
     setHint('Güncelleme başlatılıyor…')
     try {
-      await window.hddTakip.downloadUpdate()
+      const res = await window.hddTakip.downloadUpdate()
+      if (res && typeof res === 'object' && 'ok' in res && res.ok === false) {
+        const msg = friendlyUpdateError(res.error || 'Mevcut güncelleme yok.')
+        if (/mevcut güncelleme yok/i.test(msg)) {
+          setStatus({ status: 'not-available' })
+          setHint(version ? `Mevcut güncelleme yok (v${version}).` : msg)
+        } else {
+          setStatus({ status: 'error', message: msg })
+          setHint(msg)
+        }
+        setBusy(false)
+      }
     } catch (err) {
       setBusy(false)
-      const msg =
-        err instanceof Error ? err.message : 'Güncelleme indirilemedi.'
-      setStatus({ status: 'error', message: msg })
-      setHint(msg)
+      const msg = friendlyUpdateError(err)
+      if (/mevcut güncelleme yok/i.test(msg)) {
+        setStatus({ status: 'not-available' })
+        setHint(version ? `Mevcut güncelleme yok (v${version}).` : msg)
+      } else {
+        setStatus({ status: 'error', message: msg })
+        setHint(msg)
+      }
     }
   }
 
@@ -96,10 +120,16 @@ export function LoginUpdateBar() {
     setBusy(true)
     setHint('Kuruluyor, uygulama yeniden başlayacak…')
     try {
-      await window.hddTakip.installUpdate()
+      const res = await window.hddTakip.installUpdate()
+      if (res && typeof res === 'object' && 'ok' in res && res.ok === false) {
+        setBusy(false)
+        const msg = friendlyUpdateError(res.error || 'Kurulum başarısız.')
+        setStatus({ status: 'error', message: msg })
+        setHint(msg)
+      }
     } catch (err) {
       setBusy(false)
-      const msg = err instanceof Error ? err.message : 'Kurulum başarısız.'
+      const msg = friendlyUpdateError(err)
       setStatus({ status: 'error', message: msg })
       setHint(msg)
     }

@@ -125,10 +125,10 @@ function setupAutoUpdater() {
       return { available: false, version: null, current }
     })
     ipcMain.handle('updater:download', async () => {
-      throw new Error('Geliştirme modunda güncelleme yok.')
+      return { ok: false, error: 'Geliştirme modunda güncelleme yok.' }
     })
     ipcMain.handle('updater:install', async () => {
-      throw new Error('Geliştirme modunda güncelleme yok.')
+      return { ok: false, error: 'Geliştirme modunda güncelleme yok.' }
     })
     return
   }
@@ -242,24 +242,45 @@ function setupAutoUpdater() {
   })
 
   ipcMain.handle('updater:download', async () => {
-    const pending = autoUpdater.updateInfo?.version
-    if (!pending || !isNewerVersion(pending, app.getVersion())) {
-      sendToRenderer('updater:status', { status: 'not-available' })
-      throw new Error('Mevcut güncelleme yok.')
+    const current = app.getVersion()
+    let pending = autoUpdater.updateInfo?.version
+    if (!pending || !isNewerVersion(pending, current)) {
+      try {
+        const result = await autoUpdater.checkForUpdates()
+        pending = result?.updateInfo?.version ?? null
+      } catch (err) {
+        const raw = err?.message || String(err)
+        sendToRenderer('updater:status', { status: 'error', message: raw })
+        return { ok: false, error: raw }
+      }
     }
-    await autoUpdater.downloadUpdate()
-    return true
+    if (!pending || !isNewerVersion(pending, current)) {
+      sendToRenderer('updater:status', { status: 'not-available' })
+      return { ok: false, error: 'Mevcut güncelleme yok.' }
+    }
+    try {
+      await autoUpdater.downloadUpdate()
+      return { ok: true }
+    } catch (err) {
+      const raw = err?.message || String(err)
+      sendToRenderer('updater:status', {
+        status: 'error',
+        message: raw,
+      })
+      return { ok: false, error: raw }
+    }
   })
 
-  ipcMain.handle('updater:install', () => {
-    const pending = autoUpdater.updateInfo?.version
-    if (!pending || !isNewerVersion(pending, app.getVersion())) {
+  ipcMain.handle('updater:install', async () => {
+    const current = app.getVersion()
+    let pending = autoUpdater.updateInfo?.version
+    if (!pending || !isNewerVersion(pending, current)) {
       sendToRenderer('updater:status', { status: 'not-available' })
-      throw new Error('Mevcut güncelleme yok.')
+      return { ok: false, error: 'Mevcut güncelleme yok.' }
     }
     // Sessiz kurulum: NSIS "Yükleniyor" penceresini gösterme
     autoUpdater.quitAndInstall(true, true)
-    return true
+    return { ok: true }
   })
 
   setTimeout(() => {
