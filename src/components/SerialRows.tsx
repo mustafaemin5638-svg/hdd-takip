@@ -1,6 +1,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type ClipboardEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -15,6 +16,13 @@ interface Props {
   placeholder?: string
   idPrefix?: string
 }
+
+/** Barkod okuyucu karakter aralığı (ms) — insan yazımından ayırt etmek için */
+const SCAN_CHAR_GAP_MS = 45
+/** Son karakterden sonra satıra geçmeden önce bekleme */
+const SCAN_IDLE_MS = 90
+/** Otomatik geçiş için minimum S/N uzunluğu */
+const SCAN_MIN_LEN = 4
 
 function ensureTrailingEmpty(list: string[]): string[] {
   if (list.length === 0) return ['']
@@ -32,18 +40,73 @@ export function SerialRows({
   const filled = values.filter((v) => v.trim()).length
   const focusIndex = useRef<number | null>(null)
   const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const [focusTick, setFocusTick] = useState(0)
+
+  const lastCharAt = useRef(0)
+  const rapidCount = useRef(0)
+  const scanTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const valuesRef = useRef(values)
+  valuesRef.current = values
+
+  function requestFocus(index: number) {
+    focusIndex.current = index
+    setFocusTick((t) => t + 1)
+  }
 
   useEffect(() => {
     if (focusIndex.current == null) return
-    const el = inputRefs.current[focusIndex.current]
-    el?.focus()
-    focusIndex.current = null
-  }, [values.length])
+    const idx = focusIndex.current
 
-  function setAt(index: number, value: string) {
-    const next = [...values]
+    const tryFocus = () => {
+      const el = inputRefs.current[idx]
+      if (!el) return false
+      el.focus()
+      focusIndex.current = null
+      return true
+    }
+
+    if (tryFocus()) return
+
+    const raf = requestAnimationFrame(() => {
+      if (!tryFocus()) {
+        setTimeout(tryFocus, 0)
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [values.length, focusTick])
+
+  function advanceFrom(index: number) {
+    if (scanTimer.current) {
+      clearTimeout(scanTimer.current)
+      scanTimer.current = null
+    }
+    rapidCount.current = 0
+
+    const current = valuesRef.current
+    const nextIndex = index + 1
+    if (nextIndex < current.length) {
+      requestFocus(nextIndex)
+      return
+    }
+    onChange(ensureTrailingEmpty([...current, '']))
+    requestFocus(current.length)
+  }
+
+  function setAt(index: number, value: string): boolean {
+    // Bazı okuyucular CR/LF'yi karaktere gömer
+    if (/[\r\n]/.test(value)) {
+      const cleaned = value.replace(/[\r\n]+/g, '')
+      const next = [...valuesRef.current]
+      next[index] = cleaned
+      onChange(ensureTrailingEmpty(next))
+      if (cleaned.trim()) advanceFrom(index)
+      return true
+    }
+
+    const next = [...valuesRef.current]
     next[index] = value
     onChange(ensureTrailingEmpty(next))
+    return false
   }
 
   function removeAt(index: number) {
@@ -65,26 +128,65 @@ export function SerialRows({
       .filter((v) => v.trim())
     const merged = ensureTrailingEmpty([...before, ...pasted, ...after])
     onChange(merged)
-    focusIndex.current = Math.min(before.length + pasted.length, merged.length - 1)
+    requestFocus(Math.min(before.length + pasted.length, merged.length - 1))
   }
 
   function handleKeyDown(index: number, e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
+    const isEnter =
+      e.key === 'Enter' || e.code === 'NumpadEnter' || e.key === 'NumpadEnter'
+    const isTab = e.key === 'Tab' && !e.shiftKey && values[index].trim() !== ''
+
+    if (isEnter || isTab) {
       e.preventDefault()
-      const nextIndex = index + 1
-      if (nextIndex < values.length) {
-        inputRefs.current[nextIndex]?.focus()
-      } else {
-        onChange(ensureTrailingEmpty([...values, '']))
-        focusIndex.current = values.length
+      e.stopPropagation()
+      // Boş satırda Enter: form submit olmasın, ekstra satır da açılmasın
+      if (values[index].trim() !== '') {
+        advanceFrom(index)
       }
+      return
     }
+
     if (e.key === 'Backspace' && values[index] === '' && values.length > 1 && index > 0) {
       e.preventDefault()
       removeAt(index)
-      focusIndex.current = index - 1
+      requestFocus(index - 1)
     }
   }
+
+  function handleChange(index: number, raw: string) {
+    const now = Date.now()
+    const gap = now - lastCharAt.current
+    lastCharAt.current = now
+
+    if (gap > 0 && gap <= SCAN_CHAR_GAP_MS) {
+      rapidCount.current += 1
+    } else {
+      rapidCount.current = 1
+    }
+
+    const advanced = setAt(index, raw)
+    if (advanced) return
+
+    if (scanTimer.current) clearTimeout(scanTimer.current)
+
+    // Enter/Tab göndermeyen okuyucular: hızlı yazım bittikten sonra sonraki satıra geç
+    const cleaned = raw.replace(/[\r\n]+/g, '')
+    scanTimer.current = setTimeout(() => {
+      scanTimer.current = null
+      if (
+        rapidCount.current >= SCAN_MIN_LEN &&
+        cleaned.trim().length >= SCAN_MIN_LEN
+      ) {
+        advanceFrom(index)
+      }
+    }, SCAN_IDLE_MS)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (scanTimer.current) clearTimeout(scanTimer.current)
+    }
+  }, [])
 
   return (
     <div className="serial-rows">
@@ -93,7 +195,8 @@ export function SerialRows({
         <span className="serial-count">{filled} adet</span>
       </div>
       <p className="hint">
-        Satır satır yaz. Enter ile sonraki satıra geç. Toplu yapıştırma desteklenir.
+        Barkod okutunca otomatik sonraki satıra geçer. Enter / Tab ile de geçebilirsin.
+        Toplu yapıştırma desteklenir.
       </p>
       <div className="serial-list">
         {values.map((value, index) => (
@@ -107,11 +210,12 @@ export function SerialRows({
                 id={`${idPrefix}-${index}`}
                 className="mono"
                 value={value}
-                onChange={(e) => setAt(index, e.target.value)}
+                onChange={(e) => handleChange(index, e.target.value)}
                 onPaste={(e) => handlePaste(index, e)}
                 onKeyDown={(e) => handleKeyDown(index, e)}
                 placeholder={placeholder}
                 autoComplete="off"
+                enterKeyHint="next"
               />
               {renderHint?.(value, index)}
             </div>
