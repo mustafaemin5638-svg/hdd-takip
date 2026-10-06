@@ -147,9 +147,10 @@ function MainApp({
               <h2>S/N Sorgula</h2>
               <p className="section-desc">
                 Seri numarasını gir; disk bilgisi ve (satıldıysa) aynı müşteriye giden satış
-                paketini gör. PDF satış belgesi indirebilirsin.
+                paketini gör. Yanlış girilen depolama vb. için Düzenle ile düzelt; PDF satış
+                belgesi indirebilirsin.
               </p>
-              <QueryPanel />
+              <QueryPanel onChanged={refresh} />
             </section>
           )}
 

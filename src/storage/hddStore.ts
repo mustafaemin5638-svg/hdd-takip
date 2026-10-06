@@ -209,6 +209,118 @@ export function sellManyDisks(input: {
   return { ok: true, sold, failed, saleId: sold.length > 0 ? saleId : undefined }
 }
 
+export type DiskUpdateInput = {
+  /** Yeni S/N (boş bırakılmaz; mevcutla aynıysa değişmez) */
+  serialNumber: string
+  boyut: Hdd['boyut']
+  depolama: string
+  tur: HddTur
+  distributor?: string
+  stokGirisTarihi: string
+  notlar?: string
+  /** Satılmış diskler için */
+  satilanKisi?: string
+  satisTarihi?: string
+  garantiAy?: number
+}
+
+/** Sorgulanan diski düzenle — özellikler + (satıldıysa) satış alanları */
+export function updateDiskBySerial(
+  currentSerial: string,
+  input: DiskUpdateInput,
+): { ok: true; disk: Hdd } | { ok: false; error: string } {
+  const currentSn = normalizeSerial(currentSerial)
+  const diskler = loadDiskler()
+  const index = diskler.findIndex((d) => d.serialNumber === currentSn)
+  if (index === -1) {
+    return { ok: false, error: 'Disk bulunamadı.' }
+  }
+
+  const existing = diskler[index]
+  const nextSn = normalizeSerial(input.serialNumber)
+  if (!nextSn) {
+    return { ok: false, error: 'S/N zorunludur.' }
+  }
+  if (nextSn !== currentSn) {
+    if (diskler.some((d) => d.serialNumber === nextSn)) {
+      return { ok: false, error: `${nextSn} zaten kayıtlı.` }
+    }
+  }
+
+  if (!input.depolama.trim()) {
+    return { ok: false, error: 'Depolama zorunludur.' }
+  }
+
+  const tur = normalizeTur(input.tur)
+  const distributor =
+    tur === 'sifir' ? String(input.distributor || '').trim() : ''
+  if (tur === 'sifir' && !distributor) {
+    return { ok: false, error: 'Sıfır disk için distribütör zorunlu.' }
+  }
+
+  if (Number.isNaN(new Date(input.stokGirisTarihi).getTime())) {
+    return { ok: false, error: 'Geçersiz stok giriş tarihi.' }
+  }
+
+  let satilanKisi = existing.satilanKisi
+  let satisTarihi = existing.satisTarihi
+  let garantiAy = existing.garantiAy
+
+  if (existing.durum === 'satildi') {
+    const buyer = String(input.satilanKisi || '').trim()
+    if (!buyer) {
+      return { ok: false, error: 'Alıcı (kime verildi) zorunludur.' }
+    }
+    const g = Number(input.garantiAy)
+    if (!Number.isInteger(g) || g < 0 || g > 24) {
+      return { ok: false, error: 'Garanti: Yok veya 1–24 ay seç.' }
+    }
+    const saleIso = input.satisTarihi || existing.satisTarihi
+    if (!saleIso || Number.isNaN(new Date(saleIso).getTime())) {
+      return { ok: false, error: 'Geçersiz satış tarihi.' }
+    }
+    satilanKisi = buyer
+    satisTarihi = saleIso
+    garantiAy = g
+  }
+
+  const updated: Hdd = normalizeDisk({
+    ...existing,
+    serialNumber: nextSn,
+    boyut: input.boyut,
+    depolama: input.depolama.trim(),
+    tur,
+    distributor: distributor || undefined,
+    stokGirisTarihi: input.stokGirisTarihi,
+    notlar: input.notlar?.trim() || undefined,
+    satilanKisi,
+    satisTarihi,
+    garantiAy,
+  })
+
+  diskler[index] = updated
+
+  // Satış alanları aynı paketteki diğer disklere de yansısın
+  if (existing.durum === 'satildi') {
+    const key = salePackageKey(existing)
+    for (let i = 0; i < diskler.length; i++) {
+      if (i === index) continue
+      const d = diskler[i]
+      if (d.durum !== 'satildi') continue
+      if (salePackageKey(d) !== key) continue
+      diskler[i] = normalizeDisk({
+        ...d,
+        satilanKisi,
+        satisTarihi,
+        garantiAy,
+      })
+    }
+  }
+
+  saveDiskler(diskler)
+  return { ok: true, disk: updated }
+}
+
 /** Aynı satış paketindeki diskler (saleId veya eski kayıtlarda alıcı+gün) */
 export function findSaleBatch(anchor: Hdd, pool?: Hdd[]): Hdd[] {
   if (anchor.durum !== 'satildi') return [anchor]

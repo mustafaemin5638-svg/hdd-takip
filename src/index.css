@@ -504,6 +504,19 @@ select:focus {
   color: var(--muted);
 }
 
+.result-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.edit-form {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
 .result-head {
   display: flex;
   align-items: center;
