@@ -1,21 +1,38 @@
-import type { HddBoyut } from '../types/hdd'
-import { BOYUT_SECENEKLERI, DEPOLAMA_SECENEKLERI } from '../types/hdd'
-import { addToStock } from '../storage/hddStore'
+import type { HddBoyut, HddTur } from '../types/hdd'
+import {
+  BOYUT_SECENEKLERI,
+  DEPOLAMA_SECENEKLERI,
+  HDD_TUR_SECENEKLERI,
+} from '../types/hdd'
+import { addDistributor, loadDistributors } from '../storage/distributorStore'
+import { addManyToStock } from '../storage/hddStore'
 import { fromDayMonthYear, nowFromPc, toDayMonthYear } from '../utils/date'
-import { useState, type FormEvent } from 'react'
+import { SerialRows } from './SerialRows'
+import { useEffect, useState, type FormEvent } from 'react'
 
 interface Props {
   onChanged: () => void
 }
 
 export function StockForm({ onChanged }: Props) {
-  const [serialNumber, setSerialNumber] = useState('')
+  const [serials, setSerials] = useState<string[]>([''])
   const [boyut, setBoyut] = useState<HddBoyut>('3.5"')
-  const [depolama, setDepolama] = useState<string>('500GB')
+  const [depolama, setDepolama] = useState<string>('1TB')
   const [ozelDepolama, setOzelDepolama] = useState(false)
+  const [tur, setTur] = useState<HddTur>('ikinci_el')
+  const [distributor, setDistributor] = useState('')
+  const [distributors, setDistributors] = useState<string[]>([])
   const [tarih, setTarih] = useState(() => toDayMonthYear())
   const [notlar, setNotlar] = useState('')
   const [message, setMessage] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  function refreshDistributors() {
+    setDistributors(loadDistributors())
+  }
+
+  useEffect(() => {
+    refreshDistributors()
+  }, [])
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -25,39 +42,103 @@ export function StockForm({ onChanged }: Props) {
       return
     }
 
-    const result = addToStock({
-      serialNumber,
+    if (tur === 'sifir' && !distributor.trim()) {
+      setMessage({ type: 'err', text: 'Sıfır disk için distribütör seç / gir.' })
+      return
+    }
+
+    const result = addManyToStock({
+      serialNumbers: serials,
       boyut,
       depolama,
+      tur,
+      distributor: tur === 'sifir' ? distributor : undefined,
       stokGirisTarihi,
       notlar,
     })
+
     if (!result.ok) {
       setMessage({ type: 'err', text: result.error })
       return
     }
 
-    setMessage({ type: 'ok', text: `${result.disk.serialNumber} stoğa eklendi.` })
-    setSerialNumber('')
-    setNotlar('')
-    setTarih(toDayMonthYear())
-    onChanged()
+    const turText = tur === 'sifir' ? 'Sıfır' : '2. El'
+    const parts = [
+      `${result.added.length} disk stoğa eklendi (${turText} · ${boyut} · ${depolama}).`,
+    ]
+    if (result.skipped.length > 0) {
+      parts.push(
+        `Atlanan ${result.skipped.length}: ${result.skipped
+          .slice(0, 5)
+          .map((s) => `${s.serialNumber} (${s.error})`)
+          .join(', ')}${result.skipped.length > 5 ? '…' : ''}`,
+      )
+    }
+
+    setMessage({
+      type: result.added.length > 0 ? 'ok' : 'err',
+      text: parts.join(' '),
+    })
+
+    if (result.added.length > 0) {
+      if (tur === 'sifir' && distributor.trim()) {
+        addDistributor(distributor.trim())
+        refreshDistributors()
+      }
+      setSerials([''])
+      setNotlar('')
+      setTarih(toDayMonthYear())
+      onChanged()
+    }
   }
+
+  const readyCount = serials.filter((s) => s.trim()).length
 
   return (
     <form className="panel-form" onSubmit={handleSubmit}>
       <div className="field">
-        <label htmlFor="stok-sn">S/N</label>
-        <input
-          id="stok-sn"
-          className="mono"
-          value={serialNumber}
-          onChange={(e) => setSerialNumber(e.target.value)}
-          placeholder="Örn: WX12A3456789"
-          autoComplete="off"
-          required
-        />
+        <label htmlFor="stok-tur">Tür</label>
+        <select
+          id="stok-tur"
+          value={tur}
+          onChange={(e) => {
+            const next = e.target.value as HddTur
+            setTur(next)
+            if (next === 'ikinci_el') {
+              setDistributor('')
+              setMessage(null)
+            }
+          }}
+        >
+          {HDD_TUR_SECENEKLERI.map((t) => (
+            <option key={t.value} value={t.value}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </div>
+
+      {tur === 'sifir' && (
+        <div className="field">
+          <label htmlFor="stok-distributor">Distribütör / tedarikçi (zorunlu)</label>
+          <input
+            id="stok-distributor"
+            list="stok-distributor-list"
+            value={distributor}
+            onChange={(e) => setDistributor(e.target.value)}
+            placeholder="Seç veya yaz"
+            required
+          />
+          <datalist id="stok-distributor-list">
+            {distributors.map((d) => (
+              <option key={d} value={d} />
+            ))}
+          </datalist>
+          <button type="button" className="linkish" onClick={refreshDistributors}>
+            Tedarikçi listesini yenile
+          </button>
+        </div>
+      )}
 
       <div className="field-row">
         <div className="field">
@@ -104,13 +185,32 @@ export function StockForm({ onChanged }: Props) {
             onClick={() => {
               setOzelDepolama((v) => !v)
               if (!ozelDepolama) setDepolama('')
-              else setDepolama('500GB')
+              else setDepolama('1TB')
             }}
           >
             {ozelDepolama ? 'Listeden seç' : 'Özel değer gir'}
           </button>
         </div>
       </div>
+
+      <p className="bulk-chip">
+        Ortak: <strong>{tur === 'sifir' ? 'Sıfır' : '2. El'}</strong> ·{' '}
+        <strong>{boyut}</strong> · <strong>{depolama}</strong>
+        {tur === 'sifir' && distributor.trim() ? (
+          <>
+            {' '}
+            · <strong>{distributor.trim()}</strong>
+          </>
+        ) : null}{' '}
+        — tüm S/N’lere uygulanır
+      </p>
+
+      <SerialRows
+        values={serials}
+        onChange={setSerials}
+        idPrefix="stok-sn"
+        placeholder="S/N yaz, Enter ile sonraki…"
+      />
 
       <div className="field">
         <label htmlFor="stok-tarih">Stoğa giriş tarihi (Gün/Ay/Yıl)</label>
@@ -133,7 +233,6 @@ export function StockForm({ onChanged }: Props) {
             Bugün
           </button>
         </div>
-        <span className="hint">Format: GG/AA/YYYY — örn. 10/08/2026</span>
       </div>
 
       <div className="field">
@@ -146,8 +245,8 @@ export function StockForm({ onChanged }: Props) {
         />
       </div>
 
-      <button type="submit" className="btn primary">
-        Stoğa Ekle
+      <button type="submit" className="btn primary" disabled={readyCount === 0}>
+        {readyCount > 1 ? `${readyCount} Diski Stoğa Ekle` : 'Stoğa Ekle'}
       </button>
 
       {message && (

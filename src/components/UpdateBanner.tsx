@@ -22,7 +22,18 @@ export function UpdateBanner() {
     if (!window.hddTakip) return
     setBusy(true)
     try {
-      await window.hddTakip.downloadUpdate()
+      const res = await window.hddTakip.downloadUpdate()
+      if (res && typeof res === 'object' && 'ok' in res && res.ok === false) {
+        setBusy(false)
+        if (/mevcut güncelleme yok/i.test(String(res.error || ''))) {
+          setStatus({ status: 'not-available' })
+        } else {
+          setStatus({
+            status: 'error',
+            message: res.error || 'Güncelleme indirilemedi.',
+          })
+        }
+      }
     } catch {
       setBusy(false)
       setStatus({ status: 'error', message: 'Güncelleme indirilemedi.' })
@@ -40,8 +51,8 @@ export function UpdateBanner() {
       {status.status === 'available' && (
         <>
           <div>
-            <strong>Yeni sürüm mevcut</strong>
-            <span className="update-meta">v{status.version}</span>
+            <strong>Yeni sürüm hazır</strong>
+            <span className="update-meta">v{status.version} — uygulama içinden indirilir</span>
           </div>
           <button
             type="button"
@@ -49,7 +60,7 @@ export function UpdateBanner() {
             disabled={busy}
             onClick={handleDownload}
           >
-            {busy ? 'Hazırlanıyor…' : 'Güncelle'}
+            {busy ? 'Hazırlanıyor…' : 'İndir ve kur'}
           </button>
         </>
       )}
@@ -72,8 +83,10 @@ export function UpdateBanner() {
       {status.status === 'downloaded' && (
         <>
           <div>
-            <strong>Güncelleme hazır</strong>
-            <span className="update-meta">v{status.version} — yeniden başlatılacak</span>
+            <strong>İndirme tamam</strong>
+            <span className="update-meta">
+              v{status.version} — kurulum arka planda sessiz yapılır
+            </span>
           </div>
           <button
             type="button"
@@ -81,7 +94,7 @@ export function UpdateBanner() {
             disabled={busy}
             onClick={handleInstall}
           >
-            Yeniden Başlat
+            Kur ve yeniden başlat
           </button>
         </>
       )}
