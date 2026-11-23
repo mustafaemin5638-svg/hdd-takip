@@ -3,6 +3,7 @@ import { AuthGate } from './auth/AuthGate'
 import { CompanyAdminPanel } from './auth/CompanyAdminPanel'
 import { DistributorPanel } from './components/DistributorPanel'
 import { LiveClock } from './components/LiveClock'
+import { DeletePanel } from './components/DeletePanel'
 import { QueryPanel } from './components/QueryPanel'
 import { SaleForm } from './components/SaleForm'
 import { StockForm } from './components/StockForm'
@@ -13,7 +14,7 @@ import { getStockCounts, loadDiskler } from './storage/hddStore'
 import type { AuthSession } from './types/auth'
 import type { Hdd } from './types/hdd'
 
-type Tab = 'sorgu' | 'stok' | 'satis' | 'liste' | 'tedarikci' | 'firma' | 'hesap'
+type Tab = 'sorgu' | 'stok' | 'satis' | 'sil' | 'liste' | 'tedarikci' | 'firma' | 'hesap'
 
 function MainApp({
   session,
@@ -85,6 +86,7 @@ function MainApp({
     ['liste', 'Liste'],
     ['stok', 'Stoğa Ekle'],
     ['satis', 'Satış'],
+    ['sil', 'Sil'],
     ['sorgu', 'Sorgulama'],
     ['tedarikci', 'Tedarikçi'],
   ]
@@ -181,6 +183,17 @@ function MainApp({
                   refresh()
                 }}
               />
+            </section>
+          )}
+
+          {tab === 'sil' && (
+            <section className="section wide">
+              <h2>S/N Sil</h2>
+              <p className="section-desc">
+                Yanlış eklenen veya kaldırılacak diskleri S/N ile sil. Stokta ve satılmış
+                kayıtlar silinebilir; işlem geri alınamaz.
+              </p>
+              <DeletePanel onChanged={refresh} />
             </section>
           )}
 

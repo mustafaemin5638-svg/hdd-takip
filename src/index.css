@@ -451,6 +451,21 @@ select:focus {
   background: var(--amber-dark);
 }
 
+.btn.danger {
+  background: #b91c1c;
+  color: #fff;
+}
+
+.btn.danger:hover {
+  background: #991b1b;
+}
+
+.btn.danger:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
 .btn.small {
   padding: 0.35rem 0.65rem;
   font-size: 0.85rem;

@@ -321,6 +321,42 @@ export function updateDiskBySerial(
   return { ok: true, disk: updated }
 }
 
+/** S/N listesine göre disk kayıtlarını kalıcı sil */
+export function deleteManyBySerial(serialNumbers: string[]): {
+  ok: true
+  deleted: Hdd[]
+  missing: string[]
+} | { ok: false; error: string } {
+  const unique = [
+    ...new Set(serialNumbers.map(normalizeSerial).filter(Boolean)),
+  ]
+  if (unique.length === 0) {
+    return { ok: false, error: 'En az bir S/N gir.' }
+  }
+
+  const diskler = loadDiskler()
+  const deleted: Hdd[] = []
+  const missing: string[] = []
+  const remove = new Set<string>()
+
+  for (const sn of unique) {
+    const disk = diskler.find((d) => d.serialNumber === sn)
+    if (!disk) {
+      missing.push(sn)
+      continue
+    }
+    deleted.push(disk)
+    remove.add(sn)
+  }
+
+  if (deleted.length === 0) {
+    return { ok: false, error: 'Girilen S/N’lerden hiçbiri kayıtlı değil.' }
+  }
+
+  saveDiskler(diskler.filter((d) => !remove.has(d.serialNumber)))
+  return { ok: true, deleted, missing }
+}
+
 /** Aynı satış paketindeki diskler (saleId veya eski kayıtlarda alıcı+gün) */
 export function findSaleBatch(anchor: Hdd, pool?: Hdd[]): Hdd[] {
   if (anchor.durum !== 'satildi') return [anchor]
